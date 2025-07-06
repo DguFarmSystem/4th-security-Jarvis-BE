@@ -17,17 +17,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. [핵심 변경] 저장소의 모든 파일을 서버의 배포용 폴더로 복사합니다.
-      - name: Copy entire project to server
-        uses: appleboy/scp-action@v0.1.7
+      # [변경] rsync를 사용하여 프로젝트 전체를 동기화합니다 (삭제 포함).
+      - name: Sync entire project to server
+        uses: burnett01/rsync-deployments@6.0.0
         with:
-          host: ${{ secrets.GCP_HOST }}
-          username: ${{ secrets.GCP_USERNAME }}
-          key: ${{ secrets.GCP_SSH_KEY }}
-          port: 22
-          source: "."  # '.'은 저장소의 모든 파일 및 디렉터리를 의미합니다.
-          target: "~/opensw-project" # 서버에 생성될 배포용 폴더 이름입니다.
-          overwrite: true # 기존 파일이 있으면 덮어씁니다.
+          switches: -avzr --delete
+          path: ./
+          remote_path: "~/opensw-project"
+          remote_host: ${{ secrets.GCP_HOST }}
+          remote_user: ${{ secrets.GCP_USERNAME }}
+          remote_key: ${{ secrets.GCP_SSH_KEY }}
 
       # 3. SSH로 GCP 서버에 접속하여 배포 스크립트를 실행합니다.
       - name: Deploy to GCP VM
