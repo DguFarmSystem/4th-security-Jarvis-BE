@@ -1,0 +1,65 @@
+# .github/workflows/deploy.yml
+
+name: Deploy Teleport to GCP
+
+# 'main' 브랜치에 코드가 푸시될 때마다 이 워크플로우를 실행합니다.
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. GitHub 저장소의 코드를 워크플로우 실행 환경으로 가져옵니다.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 변경된 teleport.yaml 파일을 GCP 서버로 복사합니다.
+      - name: Copy config file to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.GCP_HOST }}
+          username: ${{ secrets.GCP_USERNAME }}
+          key: ${{ secrets.GCP_SSH_KEY }}
+          port: 22
+          source: "teleport.yaml"
+          target: "~/teleport/config/"
+
+      # 3. SSH로 GCP 서버에 접속하여 배포 스크립트를 실행합니다.
+      - name: Deploy to GCP VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.GCP_HOST }}
+          username: ${{ secrets.GCP_USERNAME }}
+          key: ${{ secrets.GCP_SSH_KEY }}
+          port: 22
+          script: |
+            # 사용할 Teleport Docker 이미지 정의 (버전 업그레이드 시 여기만 수정)
+            TELEPORT_IMAGE="public.ecr.aws/gravitational/teleport-distroless:17.5.2"
+            
+            # 최신 버전의 이미지를 Docker Hub(또는 ECR)에서 받아옵니다.
+            sudo docker pull $TELEPORT_IMAGE
+            
+            # 기존에 실행 중인 teleport 컨테이너를 안전하게 중지합니다.
+            sudo docker stop teleport || true
+            
+            # 중지된 컨테이너를 삭제합니다.
+            sudo docker rm teleport || true
+            
+            # 제공해주신 명령어와 동일하게 새 컨테이너를 실행합니다.
+            # 방금 위에서 복사한 최신 teleport.yaml 설정이 적용됩니다.
+            sudo docker run -d --name teleport \
+              --hostname openswdev.duckdns.org \
+              -v ~/teleport/config:/etc/teleport \
+              -v ~/teleport/data:/var/lib/teleport \
+              -v /etc/letsencrypt:/etc/letsencrypt \
+              -p 3023:3023 \
+              -p 3025:3025 \
+              -p 3080:3080 \
+              $TELEPORT_IMAGE
+
+            # 불필요하게 쌓이는 이전 버전의 Docker 이미지를 정리합니다.
+            sudo docker image prune -f
+
