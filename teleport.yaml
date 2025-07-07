@@ -33,4 +33,16 @@ proxy_service:
 
   https_keypairs_reload_interval: 0s
   acme: {}
-
+app_service:
+  enabled: true
+  apps:
+    - name: grafana
+      uri: "http://grafana:3333"
+      labels:
+        env: "test"
+db_service:
+  enabled: "yes"
+  databases:
+  - name: "example-mysql"
+    protocol: "mysql"
+    uri: "test-database:3306"
