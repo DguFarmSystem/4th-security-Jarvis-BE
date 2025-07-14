@@ -25,6 +25,8 @@ auth_service:
   proxy_listener_mode: multiplex
   public_addr: "openswdev.duckdns.org:3080"
   cluster_name: "openswdev.duckdns.org"
+    authentication:
+    type: local
 ssh_service:
   enabled: "no"
 proxy_service:
