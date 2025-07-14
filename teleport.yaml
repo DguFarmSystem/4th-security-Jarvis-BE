@@ -41,14 +41,12 @@ app_service:
       uri: "http://grafana:3333"
       labels:
         env: "test"
+
+    - name: "my-backend-api"
+      uri: "http://localhost:8080"
 db_service:
   enabled: "yes"
   databases:
   - name: "example-mysql"
     protocol: "mysql"
     uri: "test-database:3306"
-app_service:
-  enabled: "yes"
-  apps:
-  - name: "my-backend-api" # 앱 이름 (대시보드에 표시됨)
-    uri: "http://localhost:8080" # 실제 백엔드 Go 서비스 주소
