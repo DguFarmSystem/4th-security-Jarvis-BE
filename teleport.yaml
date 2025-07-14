@@ -47,7 +47,8 @@ app_service:
         env: "test"
 
     - name: "my-backend-api"
-      uri: "http://localhost:8080"
+        uri: "http://localhost:8080"
+
 db_service:
   enabled: "yes"
   databases:
