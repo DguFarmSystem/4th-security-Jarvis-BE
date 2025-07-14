@@ -23,6 +23,7 @@ auth_service:
   enabled: "yes"
   listen_addr: 0.0.0.0:3025
   proxy_listener_mode: multiplex
+  public_addr: "openswdev.duckdns.org:3080"
 ssh_service:
   enabled: "no"
 proxy_service:
