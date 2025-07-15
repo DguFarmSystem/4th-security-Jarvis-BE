@@ -50,7 +50,7 @@ app_service:
       public_addr: "openswdev-api.duckdns.org"
       # 2. 내부 uri는 Go 앱이 실행되는 주소로 지정합니다.
       #    Teleport와 Go 앱이 같은 서버에 있으므로 localhost 사용이 가능합니다.
-      url: "http://172.17.0.1:8080"
+      uri: "http://172.17.0.1:8080"
 db_service:
   enabled: "yes"
   databases:
