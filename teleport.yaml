@@ -55,7 +55,7 @@ app_service:
       rewrite:
         headers:
           # 각 항목을 "Key: Value" 형태의 단일 문자열로 수정합니다.
-          - "Teleport-Username: {{internal.login}}"
+          - "Teleport-Username: {{internal.logins}}"
           - "Teleport-Roles: {{user.spec.roles}}"
           - "test: Hello world"
 db_service:
