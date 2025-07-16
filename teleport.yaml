@@ -54,12 +54,10 @@ app_service:
             # [핵심] 헤더 주입(꼬리표 붙이기) 규칙입니다.
       rewrite:
         headers:
-          - name: "Teleport-Username"
-            value: "{{internal.user.name}}"
-          - name: "Teleport-Roles"
-            value: "{{internal.user.roles}}"
-          - name: "test"
-            value: "Hello world"
+          # 각 항목을 "Key: Value" 형태의 단일 문자열로 수정합니다.
+          - "Teleport-Username: {{internal.user.name}}"
+          - "Teleport-Roles: {{internal.user.roles}}"
+          - "test: Hello world"
 db_service:
   enabled: "yes"
   databases:
