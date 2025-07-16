@@ -58,6 +58,29 @@ app_service:
           - "Teleport-Username: {{internal.logins}}"
           - "Teleport-Roles: {{user.spec.roles}}"
           - "test: Hello world"
+            # 공식 문서 기반의 완전한 CORS 설정
+      cors:
+        # [필수] Teleport 웹 UI의 주소를 허용된 출처로 지정합니다.
+        allowed_origins:
+          - "https://openswdev.duckdns.org:3080"
+
+        # [권장] 향후 확장을 위해 일반적인 HTTP 메서드를 모두 허용합니다.
+        allowed_methods:
+          - "GET"
+          - "POST"
+
+        # [권장] 일반적인 요청 헤더를 허용합니다.
+        allowed_headers:
+          - "Content-Type"
+          - "Accept"
+          # 만약 프론트에서 Authorization 헤더를 직접 보낼 일이 있다면 추가합니다.
+          # - "Authorization"
+
+        # [필수] 브라우저가 Teleport 로그인 세션 쿠키를 요청에 포함하도록 허용합니다.
+        allow_credentials: true
+
+        # [권장] Preflight 요청 결과를 1시간 동안 캐시하여 성능을 향상시킵니다.
+        max_age: 3600
 db_service:
   enabled: "yes"
   databases:
