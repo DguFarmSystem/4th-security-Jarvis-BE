@@ -32,6 +32,7 @@ ssh_service:
 proxy_service:
   enabled: "yes"
   public_addr: openswdev.duckdns.org:3080
+
   https_keypairs:
     - cert_file: /etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem
       key_file: /etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem
@@ -47,7 +48,7 @@ app_service:
         env: "test"
     - name: "my-backend-api"
       # 1. 외부에서 접속할 공개 주소를 추가합니다.
-      public_addr: "openswdev-api.duckdns.org"
+      public_addr: "openswdev.duckdns.org"
       # 2. 내부 uri는 Go 앱이 실행되는 주소로 지정합니다.
       #    Teleport와 Go 앱이 같은 서버에 있으므로 localhost 사용이 가능합니다.
       uri: "http://172.17.0.1:8080"
