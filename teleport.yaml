@@ -38,13 +38,6 @@ proxy_service:
 
   https_keypairs_reload_interval: 0s
   acme: {}
-  http_headers:
-    # 1. CSP 규칙: 웹 UI('self') 외에 API 서버로의 연결('connect-src')을 허용합니다.
-    - "Content-Security-Policy: connect-src 'self' wss: https://openswdev-api.duckdns.org:3080"
-
-    # 2. CORS 규칙: 웹 UI 주소에서 오는 API 요청을 허용('Access-Control-Allow-Origin')합니다.
-    - "Access-Control-Allow-Origin: https://openswdev.duckdns.org:3080"
-    - "Access-Control-Allow-Credentials: 'true'"
 app_service:
   enabled: true
   apps:
