@@ -53,19 +53,12 @@ app_service:
       uri: "http://172.17.0.1:8080"
             # [핵심] 헤더 주입(꼬리표 붙이기) 규칙입니다.
       rewrite:
-        headers:
-          # "Teleport-Username" 이라는 이름의 헤더를 추가하고,
-          # 그 값으로 로그인한 사용자의 이름을 넣습니다. (예: Teleport-Username: comet)
-          - name: "Teleport-Username"
-            value: "{{internal.user.name}}"
-
-          # "Teleport-Roles" 라는 이름의 헤더를 추가하고,
-          # 그 값으로 사용자의 역할 목록을 쉼표로 구분하여 넣습니다. (예: Teleport-Roles: editor,access)
-          - name: "Teleport-Roles"
-            value: "{{internal.user.roles}}"
-          # 테스트용 헤드
-          - name: "test"
-            value: "Hello world"
+        - name: "Teleport-Username"
+          value: "{{internal.user.name}}"
+        - name: "Teleport-Roles"
+          value: "{{internal.user.roles}}"
+        - name: "test"
+          value: "Hello world"
 db_service:
   enabled: "yes"
   databases:
