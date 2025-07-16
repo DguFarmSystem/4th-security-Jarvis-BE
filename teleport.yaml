@@ -53,12 +53,13 @@ app_service:
       uri: "http://172.17.0.1:8080"
             # [핵심] 헤더 주입(꼬리표 붙이기) 규칙입니다.
       rewrite:
-        - name: "Teleport-Username"
-          value: "{{internal.user.name}}"
-        - name: "Teleport-Roles"
-          value: "{{internal.user.roles}}"
-        - name: "test"
-          value: "Hello world"
+        headers:
+          - name: "Teleport-Username"
+            value: "{{internal.user.name}}"
+          - name: "Teleport-Roles"
+            value: "{{internal.user.roles}}"
+          - name: "test"
+            value: "Hello world"
 db_service:
   enabled: "yes"
   databases:
