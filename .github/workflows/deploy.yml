@@ -28,31 +28,30 @@ jobs:
           remote_user: ${{ secrets.GCP_USERNAME }}
           remote_key: ${{ secrets.GCP_SSH_KEY }}
 
-      # 3. SSH로 GCP 서버에 접속하여 배포 스크립트를 실행합니다.
-      - name: Deploy to GCP VM
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.GCP_HOST }}
-          username: ${{ secrets.GCP_USERNAME }}
-          key: ${{ secrets.GCP_SSH_KEY }}
-          port: 22
-          script: |
-            # 1. [핵심 변경] 배포 폴더의 최신 설정 파일을 실제 설정 위치로 복사합니다.
-            cp ~/opensw-project/teleport.yaml ~/teleport/config/teleport.yaml
+      # # 3. SSH로 GCP 서버에 접속하여 배포 스크립트를 실행합니다.
+      # - name: Deploy to GCP VM
+      #   uses: appleboy/ssh-action@v1.0.3
+      #   with:
+      #     host: ${{ secrets.GCP_HOST }}
+      #     username: ${{ secrets.GCP_USERNAME }}
+      #     key: ${{ secrets.GCP_SSH_KEY }}
+      #     port: 22
+      #     script: |
+      #       # 1. [핵심 변경] 배포 폴더의 최신 설정 파일을 실제 설정 위치로 복사합니다.
+      #       cp ~/opensw-project/teleport.yaml ~/teleport/config/teleport.yaml
             
-            # 2. 기존과 동일하게 Docker 컨테이너를 재시작합니다.
-            TELEPORT_IMAGE="public.ecr.aws/gravitational/teleport-distroless:17.5.2"
-            sudo docker pull $TELEPORT_IMAGE
-            sudo docker stop teleport || true
-            sudo docker rm teleport || true
-            sudo docker run -d --name teleport \
-              --hostname openswdev.duckdns.org \
-              -v /home/a01037878249/teleport/config:/etc/teleport \
-              -v /home/a01037878249/teleport/data:/var/lib/teleport \
-              -v /etc/letsencrypt:/etc/letsencrypt \
-              -p 3023:3023 \
-              -p 3025:3025 \
-              -p 3080:3080 \
-              $TELEPORT_IMAGE
-            sudo docker image prune -f
-
+      #       # 2. 기존과 동일하게 Docker 컨테이너를 재시작합니다.
+      #       TELEPORT_IMAGE="public.ecr.aws/gravitational/teleport-distroless:17.5.2"
+      #       sudo docker pull $TELEPORT_IMAGE
+      #       sudo docker stop teleport || true
+      #       sudo docker rm teleport || true
+      #       sudo docker run -d --name teleport \
+      #         --hostname openswdev.duckdns.org \
+      #         -v /home/a01037878249/teleport/config:/etc/teleport \
+      #         -v /home/a01037878249/teleport/data:/var/lib/teleport \
+      #         -v /etc/letsencrypt:/etc/letsencrypt \
+      #         -p 3023:3023 \
+      #         -p 3025:3025 \
+      #         -p 3080:3080 \
+      #         $TELEPORT_IMAGE
+      #       sudo docker image prune -f
