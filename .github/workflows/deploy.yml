@@ -23,7 +23,7 @@ jobs:
         with:
           switches: -avzr --delete
           path: ./
-          remote_path: "~/opensw-project"
+          remote_path: "~/teleport-backend"
           remote_host: ${{ secrets.GCP_HOST }}
           remote_user: ${{ secrets.GCP_USERNAME }}
           remote_key: ${{ secrets.GCP_SSH_KEY }}
