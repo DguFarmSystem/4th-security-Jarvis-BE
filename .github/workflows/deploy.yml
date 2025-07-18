@@ -21,7 +21,7 @@ jobs:
       - name: Sync entire project to server
         uses: burnett01/rsync-deployments@6.0.0
         with:
-          switches: -avzr --delete
+          switches: -avzr --delete --exclude='Dockerfile' --exclude='auth.pem'
           path: ./
           remote_path: "~/teleport-backend"
           remote_host: ${{ secrets.GCP_HOST }}
