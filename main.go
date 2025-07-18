@@ -1,4 +1,4 @@
-// 파일 이름: main.go
+// 파일 이름: main.go#
 package main
 
 import (
