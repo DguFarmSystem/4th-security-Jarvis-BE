@@ -28,8 +28,7 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		// 1. 요청 헤더에서 사용자 이름과 역할 정보 추출
 		username := c.GetHeader("Teleport-Username")
-		//roles := c.GetHeader("Teleport-Roles")
-		test := c.GetHeader("test")
+
 		// 2. 필수 헤더가 없는 경우, 요청을 거부합니다.
 		// 이는 Teleport 프록시를 통하지 않은 직접적인 접근을 막는 역할을 합니다.
 		if username == "" {
@@ -39,9 +38,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// 3. 다음 핸들러에서 사용할 수 있도록 사용자 정보를 컨텍스트에 저장
-		//              roleList := strings.Split(roles, ",")
 		c.Set("username", username)
-		//              c.Set("roles", roleList)
 		c.Next()
 	}
 }
