@@ -54,10 +54,10 @@ jobs:
             # Docker Hub에서 최신 이미지를 내려받습니다.
             docker pull ${{ env.DOCKER_IMAGE_NAME }}:latest
             
-            # 기존에 실행 중인 backend_api_c 컨테이너가 있다면 중지하고 삭제합니다.
-            if [ "$(docker ps -aq -f name=backend_api_c)" ]; then
-                docker stop backend_api_c
-                docker rm backend_api_c
+            # 기존에 실행 중인 backend-api-c 컨테이너가 있다면 중지하고 삭제합니다.
+            if [ "$(docker ps -aq -f name=backend-api-c)" ]; then
+                docker stop backend-api-c
+                docker rm backend-api-c
             fi
             
             # 서버에 저장된 auth.pem 파일의 절대 경로를 지정합니다.
@@ -67,7 +67,7 @@ jobs:
             # 최신 이미지로 새로운 컨테이너를 실행합니다.
             # --network: 'teleport-daemon'과 통신하기 위해 사설 네트워크에 연결합니다.
             # -v: 호스트의 auth.pem 파일을 컨테이너 내부의 /auth.pem 으로 마운트합니다.
-            docker run -d --name backend_api_c \
+            docker run -d --name backend-api-c \
               --network=teleport-net \
               -p 8080:8080 \
               -v ${AUTH_PEM_PATH}:/auth.pem \
