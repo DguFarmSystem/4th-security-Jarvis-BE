@@ -55,7 +55,7 @@ jobs:
             docker pull ${{ env.DOCKER_IMAGE_NAME }}:latest
             
             # 기존에 실행 중인 backend_api_c 컨테이너가 있다면 중지하고 삭제합니다.
-            if [ "$(docker ps -q -f name=backend_api_c)" ]; then
+            if [ "$(docker ps -aq -f name=backend_api_c)" ]; then
                 docker stop backend_api_c
                 docker rm backend_api_c
             fi
