@@ -33,4 +33,7 @@ RUN chmod +x /usr/local/bin/server
 # 중요: auth.pem 파일은 이미지에 포함시키지 않습니다.
 
 # 컨테이너가 시작될 때 API 서버를 실행합니다.
-ENTRYPOINT ["/usr/local/bin/server"]
+#ENTRYPOINT ["/usr/local/bin/server"]
+ENTRYPOINT ["tail", "-f", "/dev/null"]
+# [변경] 기본 인자는 비워둠
+#CMD []
