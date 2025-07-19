@@ -25,20 +25,21 @@ type TeleportClientWrapper struct {
 // AuthMiddleware는 Teleport OSS 버전의 헤더 기반 인증을 처리하는 미들웨어입니다.
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		/*
+			// 1. 요청 헤더에서 사용자 이름과 역할 정보 추출
+			username := c.GetHeader("Teleport-Username")
 
-		// 1. 요청 헤더에서 사용자 이름과 역할 정보 추출
-		username := c.GetHeader("Teleport-Username")
+			// 2. 필수 헤더가 없는 경우, 요청을 거부합니다.
+			// 이는 Teleport 프록시를 통하지 않은 직접적인 접근을 막는 역할을 합니다.
+			if username == "" {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "인증 정보(Teleport-Username 헤더)가 없습니다. Teleport를 통해 접속해야 합니다."})
+				c.Abort()
+				return
+			}
 
-		// 2. 필수 헤더가 없는 경우, 요청을 거부합니다.
-		// 이는 Teleport 프록시를 통하지 않은 직접적인 접근을 막는 역할을 합니다.
-		if username == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "인증 정보(Teleport-Username 헤더)가 없습니다. Teleport를 통해 접속해야 합니다."})
-			c.Abort()
-			return
-		}
-
-		// 3. 다음 핸들러에서 사용할 수 있도록 사용자 정보를 컨텍스트에 저장
-		c.Set("username", username)
+			// 3. 다음 핸들러에서 사용할 수 있도록 사용자 정보를 컨텍스트에 저장
+			c.Set("username", username)
+		*/
 		c.Next()
 	}
 }
