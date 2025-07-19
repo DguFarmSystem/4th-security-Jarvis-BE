@@ -44,7 +44,7 @@ func AuthMiddleware() gin.HandlerFunc {
 }
 
 func main() {
-	const authServerAddr = "openswdev.duckdns.org:3025"
+	const authServerAddr = "teleport-daemon:3025"
 	const identityFilePath = "auth.pem"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
