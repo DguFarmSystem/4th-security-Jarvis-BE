@@ -31,17 +31,11 @@ RUN apk add --no-cache curl tar ca-certificates
 
 WORKDIR /opt
 
-# [수정] 파이프(|) 대신, 스크립트를 파일로 저장 후 직접 실행합니다.
-# 1. install.sh 스크립트를 파일로 다운로드합니다.
-RUN curl -o install.sh https://cdn.teleport.dev/install.sh
-# 2. 다운로드한 스크립트에 실행 권한을 부여합니다.
-RUN chmod +x install.sh
-# 3. 스크립트를 직접 실행하여 Teleport를 설치합니다.
-RUN ./install.sh ${TELEPORT_VERSION}
-
-# 설치 후 불필요한 스크립트 파일을 삭제하여 이미지 용량을 줄입니다.
-RUN rm install.sh
-
+RUN curl -o teleport.tar.gz "https://cdn.teleport.dev/teleport-v${TELEPORT_VERSION}-linux-amd64-bin.tar.gz" && \
+    tar -xzf teleport.tar.gz && \
+    cd teleport && ./install && \
+    cd .. && \
+    rm -rf teleport teleport.tar.gz
 
 WORKDIR /app
 
