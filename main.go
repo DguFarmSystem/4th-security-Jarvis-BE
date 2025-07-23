@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/types"
@@ -26,6 +27,7 @@ var (
 	teleportIdentityFile string
 	teleportAuthAddr     string
 	clientWrapper        *TeleportClientWrapper
+	jwtSecretKey         []byte
 )
 
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -36,7 +38,6 @@ func init() {
 	teleportProxyAddr = os.Getenv("TELEPORT_PROXY_ADDR")
 	teleportAuthAddr = os.Getenv("TELEPORT_AUTH_ADDR")
 	teleportIdentityFile = os.Getenv("TELEPORT_IDENTITY_FILE")
-
 	githubOAuthConfig = &oauth2.Config{
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
@@ -44,14 +45,15 @@ func init() {
 		Endpoint:     github.Endpoint,
 		Scopes:       []string{"read:user", "read:org"},
 	}
+	secretString := os.Getenv("JWT_SECRET_KEY")
+	if secretString == "" {
+		log.Fatal("치명적 오류: JWT_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
+	}
+	jwtSecretKey = []byte(secretString)
 
 	if teleportProxyAddr == "" || teleportAuthAddr == "" || teleportIdentityFile == "" || githubOAuthConfig.ClientID == "" {
 		log.Println("경고: 일부 기능에 필요한 환경 변수가 설정되지 않았을 수 있습니다.")
 	}
-	log.Printf("teleportProxyAddr : %s", teleportProxyAddr)
-	log.Printf("teleportAuthAddr : %s", teleportAuthAddr)
-	log.Printf("teleportIdentityFile : %s", teleportIdentityFile)
-	log.Printf("githubOAuthConfig.ClientID : %s", githubOAuthConfig.ClientID)
 }
 
 func main() {
@@ -80,13 +82,11 @@ func main() {
 		apiV1.GET("/resources/nodes", clientWrapper.GetNodes)
 		apiV1.GET("/audit/events", clientWrapper.GetAuditEvents)
 	}
-	log.Println("기존 API 엔드포인트(/api/v1) 등록 완료.")
 
 	// 2-2. 신규 GitHub SSO 및 웹 터미널 엔드포인트
 	router.GET("/login", handleGitHubLogin)
 	router.GET("/callback", handleGitHubCallback)
 	router.GET("/ws", handleWebSocket)
-	log.Println("GitHub SSO 및 웹 터미널 엔드포인트(/login, /callback, /ws) 등록 완료.")
 
 	// 3. 서버 시작
 	log.Println("통합 백엔드 서버를 8080 포트에서 시작합니다.")
@@ -96,22 +96,7 @@ func main() {
 // AuthMiddleware는 Teleport OSS 버전의 헤더 기반 인증을 처리하는 미들웨어입니다.
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		/*
-			// 1. 요청 헤더에서 사용자 이름과 역할 정보 추출
-			username := c.GetHeader("Teleport-Username")
-
-			// 2. 필수 헤더가 없는 경우, 요청을 거부합니다.
-			// 이는 Teleport 프록시를 통하지 않은 직접적인 접근을 막는 역할을 합니다.
-			if username == "" {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "인증 정보(Teleport-Username 헤더)가 없습니다. Teleport를 통해 접속해야 합니다."})
-				c.Abort()
-				return
-			}
-
-			// 3. 다음 핸들러에서 사용할 수 있도록 사용자 정보를 컨텍스트에 저장
-			c.Set("username", username)
-		*/
-
+		// 이후 쿠키의 JWT를 검증하는 로직으로 변경
 		c.Next()
 	}
 }
@@ -171,14 +156,15 @@ func handleGitHubLogin(c *gin.Context) {
 }
 
 func handleGitHubCallback(c *gin.Context) {
+	// 1. GitHub로부터 받은 임시 코드로 Access Token 교환
 	code := c.Query("code")
-	token, err := githubOAuthConfig.Exchange(context.Background(), code)
+	oauthToken, err := githubOAuthConfig.Exchange(context.Background(), code)
 	if err != nil {
 		c.String(http.StatusInternalServerError, "GitHub 토큰 교환 실패: "+err.Error())
 		return
 	}
 
-	client := githubOAuthConfig.Client(context.Background(), token)
+	client := githubOAuthConfig.Client(context.Background(), oauthToken)
 	resp, err := client.Get("https://api.github.com/user")
 	if err != nil {
 		c.String(http.StatusInternalServerError, "GitHub에서 사용자 정보 조회 실패: "+err.Error())
@@ -194,7 +180,31 @@ func handleGitHubCallback(c *gin.Context) {
 		return
 	}
 
-	c.SetCookie("github_user", user.Login, 3600, "/", "localhost", false, true)
+	claims := jwt.MapClaims{
+		"username": user.Login,                           // GitHub 사용자 이름
+		"exp":      time.Now().Add(time.Hour * 1).Unix(), // 토큰 만료 시간: 1시간
+		"iat":      time.Now().Unix(),                    // 토큰 발급 시간
+	}
+	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// [수정] 이제 전역 변수인 jwtSecretKey를 사용하여 토큰을 서명합니다.
+	tokenString, err := jwtToken.SignedString(jwtSecretKey)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "토큰 생성 실패"})
+		return
+	}
+
+	c.SetCookie(
+		"auth_token", // 쿠키 이름
+		tokenString,  // [수정] 실제 JWT 문자열을 쿠키 값으로 사용
+		3600,
+		"/",
+		"",   // 도메인을 비워두면 현재 도메인에만 적용됨 (localhost, duckdns 등 모두 동작)
+		true, // Secure 플래그 (HTTPS에서만 전송)
+		true, // HttpOnly 플래그 (JS 접근 방지)
+	)
+
 	c.Redirect(http.StatusFound, "http://localhost:3000/terminal")
 }
 
