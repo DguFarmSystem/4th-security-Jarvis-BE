@@ -218,9 +218,29 @@ func handleGitHubCallback(c *gin.Context) {
 }
 
 func handleWebSocket(c *gin.Context) {
-	githubUser, err := c.Cookie("github_user")
+	tokenString, err := c.Cookie("auth_token")
 	if err != nil {
 		log.Println("쿠키에서 GitHub 사용자 정보를 찾을 수 없습니다. 로그인이 필요합니다.")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	// 2. [추가] 읽어온 JWT 토큰을 파싱하고 검증합니다.
+	claims := jwt.MapClaims{}
+	_, err = jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		// 서명 방식을 확인하고, init()에서 로드한 비밀 키를 반환합니다.
+		return jwtSecretKey, nil
+	})
+	if err != nil {
+		log.Printf("유효하지 않은 JWT 토큰입니다: %v", err)
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	// 3. [추가] 토큰의 클레임(내용)에서 사용자 이름을 추출합니다.
+	githubUser, ok := claims["username"].(string)
+	if !ok || githubUser == "" {
+		log.Println("JWT 토큰에 사용자 이름이 포함되어 있지 않습니다.")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
