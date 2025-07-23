@@ -8,6 +8,7 @@ WORKDIR /app
 
 # go.mod와 go.sum을 먼저 복사하여 종속성을 캐시합니다.
 COPY go.mod go.sum ./
+# go.mod 파일을 기반으로 모든 종속성을 다운로드합니다.
 RUN go mod download
 
 # 나머지 소스 코드를 복사합니다.
@@ -18,22 +19,22 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o /app/server .
 
 # --- 2단계: 최종 실행 환경 ---
-# 프로덕션 환경을 위해 경량화된 alpine 이미지를 사용합니다.
-FROM alpine:3.18
+# [핵심] 'tsh' 명령어를 사용하기 위해 공식 Teleport 이미지를 기반으로 합니다.
+FROM public.ecr.aws/gravitational/teleport:15
 
-# ca-certificates는 HTTPS 통신 등에 필요할 수 있습니다.
-RUN apk --no-cache add ca-certificates
+WORKDIR /app
 
-# 빌드 환경에서 컴파일된 실행 파일을 복사합니다.
-COPY --from=builder /app/server /usr/local/bin/server
+# 1단계(빌더)에서 컴파일된 Go 바이너리만 복사합니다.
+COPY --from=builder /app/server /app/server
 
-# 실행 파일에 실행 권한을 부여합니다.
-RUN chmod +x /usr/local/bin/server
+# [보안] auth.pem과 같은 민감한 파일은 이미지에 포함시키지 않습니다.
+# 배포 시점에 deploy.yml 스크립트가 볼륨 마운트(-v)로 주입합니다.
+
+# 컨테이너가 8080 포트를 외부에 노출합니다.
+EXPOSE 8080
 
 # 중요: auth.pem 파일은 이미지에 포함시키지 않습니다.
 
 # 컨테이너가 시작될 때 API 서버를 실행합니다.
-#ENTRYPOINT ["/usr/local/bin/server"]
+#CMD ["/app/server"]
 ENTRYPOINT ["tail", "-f", "/dev/null"]
-# [변경] 기본 인자는 비워둠
-#CMD []
