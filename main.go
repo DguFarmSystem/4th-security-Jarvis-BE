@@ -214,7 +214,7 @@ func handleGitHubCallback(c *gin.Context) {
 		true,  // HttpOnly 플래그 (JS 접근 방지)
 	)
 
-	c.Redirect(http.StatusFound, "http://localhost:3000/terminal")
+	c.Redirect(http.StatusFound, "http://openswdev.duckdns.org:3000")
 }
 
 func handleWebSocket(c *gin.Context) {
