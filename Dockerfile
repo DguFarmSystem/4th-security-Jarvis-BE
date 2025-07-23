@@ -19,8 +19,25 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o /app/server .
 
 # --- 2단계: 최종 실행 환경 ---
-# [핵심] 'tsh' 명령어를 사용하기 위해 공식 Teleport 이미지를 기반으로 합니다.
-FROM public.ecr.aws/gravitational/teleport:15
+# [수정] 경량화된 alpine 이미지를 기본으로 사용합니다.
+FROM alpine:3.19
+
+# [추가] Teleport 버전을 변수로 정의하여 관리 용이성을 높입니다.
+# 클러스터 버전에 맞춰 이 값을 수정할 수 있습니다.
+ARG TELEPORT_VERSION=15.3.1
+
+# [추가] tsh 설치에 필요한 도구(curl, tar)와 HTTPS 통신을 위한 ca-certificates를 설치합니다.
+RUN apk add --no-cache curl tar ca-certificates
+
+WORKDIR /opt
+
+# [추가] 공식 문서의 가이드에 따라 Teleport 바이너리를 다운로드하고 설치합니다.
+RUN curl -o teleport.tar.gz "https://cdn.teleport.dev/teleport-v${TELEPORT_VERSION}-linux-amd64-bin.tar.gz" && \
+    tar -xzf teleport.tar.gz && \
+    cd teleport && ./install && \
+    cd .. && \
+    # [추가] 이미지 용량을 줄이기 위해 설치 후 불필요한 파일들을 삭제합니다.
+    rm -rf teleport teleport.tar.gz
 
 WORKDIR /app
 
