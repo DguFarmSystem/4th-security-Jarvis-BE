@@ -158,11 +158,16 @@ func handleGitHubLogin(c *gin.Context) {
 func handleGitHubCallback(c *gin.Context) {
 	// 1. GitHub로부터 받은 임시 코드로 Access Token 교환
 	code := c.Query("code")
+	log.Printf("[DEBUG] /callback: GitHub로부터 받은 임시 코드(code): %s", code)
+
 	oauthToken, err := githubOAuthConfig.Exchange(context.Background(), code)
+	log.Printf("[DEBUG] /callback: GitHub Access Token 교환 성공. 토큰 타입: %s", oauthToken.TokenType)
+
 	if err != nil {
 		c.String(http.StatusInternalServerError, "GitHub 토큰 교환 실패: "+err.Error())
 		return
 	}
+	log.Printf("[DEBUG] /callback: GitHub로부터 받은 임시 코드(code): %s", code)
 
 	client := githubOAuthConfig.Client(context.Background(), oauthToken)
 	resp, err := client.Get("https://api.github.com/user")
@@ -180,6 +185,8 @@ func handleGitHubCallback(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[DEBUG] /callback: GitHub 사용자 이름 조회 성공: %s", user.Login)
+
 	claims := jwt.MapClaims{
 		"username": user.Login,                           // GitHub 사용자 이름
 		"exp":      time.Now().Add(time.Hour * 1).Unix(), // 토큰 만료 시간: 1시간
@@ -189,6 +196,8 @@ func handleGitHubCallback(c *gin.Context) {
 
 	// [수정] 이제 전역 변수인 jwtSecretKey를 사용하여 토큰을 서명합니다.
 	tokenString, err := jwtToken.SignedString(jwtSecretKey)
+
+	log.Printf("[DEBUG] /callback: JWT 생성 성공. 토큰 시작 부분: %s...", tokenString[:10])
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "토큰 생성 실패"})
