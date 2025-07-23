@@ -24,20 +24,14 @@ FROM alpine:3.19
 
 # [추가] Teleport 버전을 변수로 정의하여 관리 용이성을 높입니다.
 # 클러스터 버전에 맞춰 이 값을 수정할 수 있습니다.
-ARG TELEPORT_VERSION=15.3.1
+ARG TELEPORT_VERSION=17.5.4
 
 # [추가] tsh 설치에 필요한 도구(curl, tar)와 HTTPS 통신을 위한 ca-certificates를 설치합니다.
 RUN apk add --no-cache curl tar ca-certificates
 
 WORKDIR /opt
 
-# [추가] 공식 문서의 가이드에 따라 Teleport 바이너리를 다운로드하고 설치합니다.
-RUN curl -o teleport.tar.gz "https://cdn.teleport.dev/teleport-v${TELEPORT_VERSION}-linux-amd64-bin.tar.gz" && \
-    tar -xzf teleport.tar.gz && \
-    cd teleport && ./install && \
-    cd .. && \
-    # [추가] 이미지 용량을 줄이기 위해 설치 후 불필요한 파일들을 삭제합니다.
-    rm -rf teleport teleport.tar.gz
+RUN curl https://cdn.teleport.dev/install.sh | bash -s ${TELEPORT_VERSION}
 
 WORKDIR /app
 
@@ -53,5 +47,5 @@ EXPOSE 8080
 # 중요: auth.pem 파일은 이미지에 포함시키지 않습니다.
 
 # 컨테이너가 시작될 때 API 서버를 실행합니다.
-#CMD ["/app/server"]
-ENTRYPOINT ["tail", "-f", "/dev/null"]
+CMD ["/app/server"]
+#ENTRYPOINT ["tail", "-f", "/dev/null"]
