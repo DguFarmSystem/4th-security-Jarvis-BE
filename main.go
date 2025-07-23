@@ -209,9 +209,9 @@ func handleGitHubCallback(c *gin.Context) {
 		tokenString,  // [수정] 실제 JWT 문자열을 쿠키 값으로 사용
 		3600,
 		"/",
-		"",   // 도메인을 비워두면 현재 도메인에만 적용됨 (localhost, duckdns 등 모두 동작)
-		true, // Secure 플래그 (HTTPS에서만 전송)
-		true, // HttpOnly 플래그 (JS 접근 방지)
+		"",    // 도메인을 비워두면 현재 도메인에만 적용됨 (localhost, duckdns 등 모두 동작)
+		false, // Secure 플래그 (HTTPS에서만 전송)
+		true,  // HttpOnly 플래그 (JS 접근 방지)
 	)
 
 	c.Redirect(http.StatusFound, "http://localhost:3000/terminal")
