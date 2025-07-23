@@ -48,6 +48,10 @@ func init() {
 	if teleportProxyAddr == "" || teleportAuthAddr == "" || teleportIdentityFile == "" || githubOAuthConfig.ClientID == "" {
 		log.Println("경고: 일부 기능에 필요한 환경 변수가 설정되지 않았을 수 있습니다.")
 	}
+	log.Printf("teleportProxyAddr : %s", teleportProxyAddr)
+	log.Printf("teleportAuthAddr : %s", teleportAuthAddr)
+	log.Printf("teleportIdentityFile : %s", teleportIdentityFile)
+	log.Printf("githubOAuthConfig.ClientID : %s", githubOAuthConfig.ClientID)
 }
 
 func main() {

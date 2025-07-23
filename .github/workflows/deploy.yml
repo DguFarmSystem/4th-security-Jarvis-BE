@@ -71,9 +71,10 @@ jobs:
               --network=teleport-net \
               -p 8080:8080 \
               -v ${AUTH_PEM_PATH}:/auth.pem \
-              -e GITHUB_CLIENT_ID='${{ secrets.GITHUB_CLIENT_ID }}' \
-              -e GITHUB_CLIENT_SECRET='${{ secrets.GITHUB_CLIENT_SECRET }}' \
-              -e GITHUB_CALLBACK_URL='${{ secrets.GITHUB_CALLBACK_URL }}' \
+              -e GITHUB_CLIENT_ID='${{ secrets.CLIENT_ID }}' \
+              -e GITHUB_CLIENT_SECRET='${{ secrets.CLIENT_SECRET }}' \
+              -e GITHUB_CALLBACK_URL='${{ secrets.CALLBACK_URL }}' \
               -e TELEPORT_PROXY_ADDR='${{ secrets.TELEPORT_PROXY_ADDR }}' \
               -e TELEPORT_AUTH_ADDR='${{ secrets.TELEPORT_AUTH_ADDR }}' \
+              -e TELEPORT_IDENTITY_FILE='${{ secrets.TELEPORT_IDENTITY_FILE }}' \
               ${{ env.DOCKER_IMAGE_NAME }}:latest
