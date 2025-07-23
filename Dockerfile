@@ -31,7 +31,7 @@ RUN apk add --no-cache curl tar ca-certificates
 
 WORKDIR /opt
 
-RUN curl https://cdn.teleport.dev/install.sh | bash -s ${TELEPORT_VERSION}
+RUN curl https://cdn.teleport.dev/install.sh | sh -s ${TELEPORT_VERSION}
 
 WORKDIR /app
 
