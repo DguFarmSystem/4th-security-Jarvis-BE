@@ -255,51 +255,66 @@ func handleWebSocket(c *gin.Context) {
 	}
 
 	log.Printf("사용자 '%s'를 위해 SSH 세션 준비 중... (대상: %s@%s)", githubUser, loginUser, nodeHost)
-
-	certDir, err := os.MkdirTemp("", "teleport-certs-")
-	if err != nil {
-		log.Println("임시 인증서 디렉터리 생성 실패:", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	defer os.RemoveAll(certDir)
-	loginCmd := exec.Command("tsh", "login", "--proxy", "openswdev.duckdns.org:3080", "--identity", teleportIdentityFile, "--out", certDir)
-	log.Printf("[DEBUG] Executing login command: %s", strings.Join(loginCmd.Args, " "))
-	if output, err := loginCmd.CombinedOutput(); err != nil {
+	/*
+		certDir, err := os.MkdirTemp("", "teleport-certs-")
+		if err != nil {
+			log.Println("임시 인증서 디렉터리 생성 실패:", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+		defer os.RemoveAll(certDir)
+		loginCmd := exec.Command("tsh", "login", "--proxy=", "openswdev.duckdns.org:3080", "--identity=", teleportIdentityFile, "--out=", certDir)
+		log.Printf("[DEBUG] Executing login command: %s", strings.Join(loginCmd.Args, " "))
+		if output, err := loginCmd.CombinedOutput(); err != nil {
+			// [수정] 로그 메시지를 더 명확하게 변경합니다.
+			log.Printf("Bot User(%s)로 로그인 실패: %v, 출력: %s", teleportIdentityFile, err, string(output))
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
 		// [수정] 로그 메시지를 더 명확하게 변경합니다.
-		log.Printf("Bot User(%s)로 로그인 실패: %v, 출력: %s", teleportIdentityFile, err, string(output))
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	// [수정] 로그 메시지를 더 명확하게 변경합니다.
-	log.Printf("Bot User(%s)로 로그인 성공.", teleportIdentityFile)
+		log.Printf("Bot User(%s)로 로그인 성공.", teleportIdentityFile)
 
-	wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--proxy", "openswdev.duckdns.org:3080", "--identity", certDir, "--user", githubUser)
-	log.Printf("[DEBUG] Executing ws command: %s", strings.Join(wsCmd.Args, " "))
-	// [기존 코드] '화면'에 해당하는 stdout 파이프를 가져옵니다.
-	stdout, err := wsCmd.StdoutPipe()
-	if err != nil {
-		log.Printf("tsh proxy ws stdout 파이프 생성 실패: %v", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
+		wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--proxy=", "openswdev.duckdns.org:3080", "--identity=", certDir, "--user=", githubUser)
+		log.Printf("[DEBUG] Executing ws command: %s", strings.Join(wsCmd.Args, " "))
+		// [기존 코드] '화면'에 해당하는 stdout 파이프를 가져옵니다.
+		stdout, err := wsCmd.StdoutPipe()
+		if err != nil {
+			log.Printf("tsh proxy ws stdout 파이프 생성 실패: %v", err)
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
+		}
+	*/
+	sshCmd := exec.Command("tsh",
+		"--proxy", "openswdev.duckdns.org:3080",
+		"--identity", teleportIdentityFile,
+		"--user", githubUser,
+		"ssh",
+		fmt.Sprintf("%s@%s", loginUser, nodeHost),
+	)
+	log.Printf("[DEBUG] Executing final ssh command: %s", strings.Join(sshCmd.Args, " "))
 	// [추가] '키보드'에 해당하는 stdin 파이프를 가져옵니다.
-	stdin, err := wsCmd.StdinPipe()
-	if err != nil {
-		log.Printf("tsh proxy ws stdin 파이프 생성 실패: %v", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	wsCmd.Stderr = os.Stderr
 
-	// 이제 모든 파이프가 연결되었으니, tsh 프로세스를 시작합니다.
-	if err := wsCmd.Start(); err != nil {
-		log.Printf("tsh proxy ws 프로세스 시작 실패: %v", err)
+	// --- 여기서부터 파이프 연결, 프로세스 시작, 데이터 중계 로직 ---
+	stdout, err := sshCmd.StdoutPipe() // 여기서 stdout 변수 생성
+	if err != nil {
+		log.Printf("tsh ssh stdout 파이프 생성 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	defer wsCmd.Process.Kill()
+	stdin, err := sshCmd.StdinPipe() // 여기서 stdin 변수 생성
+	if err != nil {
+		log.Printf("tsh ssh stdin 파이프 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	sshCmd.Stderr = os.Stderr
+
+	if err := sshCmd.Start(); err != nil {
+		log.Printf("tsh ssh 프로세스 시작 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	defer sshCmd.Process.Kill()
 
 	feConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
@@ -308,7 +323,7 @@ func handleWebSocket(c *gin.Context) {
 	}
 	defer feConn.Close()
 
-	log.Printf("프론트엔드와 WebSocket 연결 성공. 데이터 중계를 시작합니다.")
+	log.Println("프론트엔드와 WebSocket 연결 성공. 데이터 중계를 시작합니다.")
 
 	go func() { // tsh -> Frontend
 		buf := make([]byte, 32*1024)
