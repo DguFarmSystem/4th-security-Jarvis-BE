@@ -21,14 +21,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o /app/server .
 # --- 2단계: 최종 실행 환경 ---
 FROM ubuntu:latest
 
-# [추가] Teleport 버전을 변수로 정의하여 관리 용이성을 높입니다.
-# 클러스터 버전에 맞춰 이 값을 수정할 수 있습니다.
 ARG TELEPORT_VERSION=17.5.4
 
-# [추가] tsh 설치에 필요한 도구(curl, tar)와 HTTPS 통신을 위한 ca-certificates를 설치합니다.
-# [수정] apt-get을 사용하여 필수 도구를 설치합니다.
-#         - apt-get update로 패키지 목록을 먼저 갱신해야 합니다.
-#         - --no-install-recommends로 불필요한 패키지 설치를 막아 용량을 줄입니다.
 RUN apt-get update && apt-get install -y \
     curl \
     tar \
@@ -54,7 +48,8 @@ COPY --from=builder /app/server /app/server
 
 # [추가] 컨테이너 시작 시 실행될 스크립트를 복사하고 실행 권한을 부여합니다.
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && \
+    chmod +x /entrypoint.sh
 
 EXPOSE 8080
 

@@ -1,3 +1,6 @@
+#!/bin/bash
+# entrypoint.sh
+
 # 1. 환경 변수로 전달된 일회용 조인 토큰을 사용하여 tbot을 백그라운드로 실행합니다.
 #    tbot은 인증서를 /opt/machine-id 디렉터리에 자동으로 생성하고 갱신합니다.
 echo "Starting tbot in background with the provided join token..."
