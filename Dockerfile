@@ -19,7 +19,6 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o /app/server .
 
 # --- 2단계: 최종 실행 환경 ---
-# [수정] 경량화된 alpine 이미지를 기본으로 사용합니다.
 FROM ubuntu:latest
 
 # [추가] Teleport 버전을 변수로 정의하여 관리 용이성을 높입니다.
@@ -27,7 +26,16 @@ FROM ubuntu:latest
 ARG TELEPORT_VERSION=17.5.4
 
 # [추가] tsh 설치에 필요한 도구(curl, tar)와 HTTPS 통신을 위한 ca-certificates를 설치합니다.
-RUN apk add --no-cache curl tar ca-certificates
+# [수정] apt-get을 사용하여 필수 도구를 설치합니다.
+#         - apt-get update로 패키지 목록을 먼저 갱신해야 합니다.
+#         - --no-install-recommends로 불필요한 패키지 설치를 막아 용량을 줄입니다.
+RUN apt-get update && apt-get install -y \
+    curl \
+    tar \
+    ca-certificates \
+    --no-install-recommends && \
+    # 설치 후 캐시를 삭제하여 최종 이미지 용량을 최적화합니다.
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
 
