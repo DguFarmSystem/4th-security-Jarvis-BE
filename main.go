@@ -273,12 +273,26 @@ func handleWebSocket(c *gin.Context) {
 	log.Printf("Bot User(%s)로 로그인 성공.", teleportIdentityFile)
 
 	wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--proxy", teleportProxyAddr, "--identity", certDir, "--user", githubUser)
-	stdout, _ := wsCmd.StdoutPipe()
-	stdin, _ := wsCmd.StdinPipe()
-	wsCmd.Stderr = os.Stderr
-
+	// [기존 코드] '화면'에 해당하는 stdout 파이프를 가져옵니다.
+	stdout, err := wsCmd.StdoutPipe()
 	if err != nil {
 		log.Printf("tsh proxy ws stdout 파이프 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	// [추가] '키보드'에 해당하는 stdin 파이프를 가져옵니다.
+	stdin, err := wsCmd.StdinPipe()
+	if err != nil {
+		log.Printf("tsh proxy ws stdin 파이프 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	wsCmd.Stderr = os.Stderr
+
+	// 이제 모든 파이프가 연결되었으니, tsh 프로세스를 시작합니다.
+	if err := wsCmd.Start(); err != nil {
+		log.Printf("tsh proxy ws 프로세스 시작 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
