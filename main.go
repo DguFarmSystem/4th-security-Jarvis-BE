@@ -262,7 +262,7 @@ func handleWebSocket(c *gin.Context) {
 		return
 	}
 	defer os.RemoveAll(certDir)
-	loginCmd := exec.Command("tsh", "login", "--proxy", teleportProxyAddr, "--identity", teleportIdentityFile, "--out", certDir)
+	loginCmd := exec.Command("tsh", "login", "--proxy", "openswdev.duckdns.org:3080", "--identity", teleportIdentityFile, "--out", certDir)
 	if output, err := loginCmd.CombinedOutput(); err != nil {
 		// [수정] 로그 메시지를 더 명확하게 변경합니다.
 		log.Printf("Bot User(%s)로 로그인 실패: %v, 출력: %s", teleportIdentityFile, err, string(output))
@@ -272,7 +272,7 @@ func handleWebSocket(c *gin.Context) {
 	// [수정] 로그 메시지를 더 명확하게 변경합니다.
 	log.Printf("Bot User(%s)로 로그인 성공.", teleportIdentityFile)
 
-	wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--proxy", teleportProxyAddr, "--identity", certDir, "--user", githubUser)
+	wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--proxy", "openswdev.duckdns.org:3080", "--identity", certDir, "--user", githubUser)
 	// [기존 코드] '화면'에 해당하는 stdout 파이프를 가져옵니다.
 	stdout, err := wsCmd.StdoutPipe()
 	if err != nil {
