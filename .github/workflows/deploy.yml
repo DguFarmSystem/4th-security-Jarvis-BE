@@ -69,7 +69,7 @@ jobs:
             # 1. 배포 직전에 teleport-daemon 컨테이너를 통해 일회용 조인 토큰을 생성합니다.
             # --ttl=5m: 이 토큰은 5분만 유효하므로 보안에 매우 유리합니다.
             echo "Generating a new one-time join token for the bot..."
-            BOT_JOIN_TOKEN=$(docker exec teleport-daemon tctl bots add jarvis-bot --roles=access --logins=root --ttl=5m | grep 'join token is:' | awk '{print $4}')
+            BOT_JOIN_TOKEN=$(docker exec teleport-daemon tctl bots add jarvis-bot --roles=access --logins=root --ttl=5m | grep 'The bot token: ' | awk '{print $4}')
             
             # 토큰이 정상적으로 추출되었는지 확인하는 방어 로직 (디버깅에 유용)
             if [ -z "$BOT_JOIN_TOKEN" ]; then
