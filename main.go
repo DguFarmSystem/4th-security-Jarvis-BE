@@ -25,12 +25,11 @@ import (
 const machineIDIdentityFile = "/opt/machine-id/identity"
 
 var (
-	githubOAuthConfig    *oauth2.Config
-	teleportProxyAddr    string
-	teleportIdentityFile string
-	teleportAuthAddr     string
-	clientWrapper        *TeleportClientWrapper
-	jwtSecretKey         []byte
+	githubOAuthConfig *oauth2.Config
+	teleportProxyAddr string
+	teleportAuthAddr  string
+	clientWrapper     *TeleportClientWrapper
+	jwtSecretKey      []byte
 )
 
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -40,7 +39,6 @@ type TeleportClientWrapper struct{ Client *client.Client }
 func init() {
 	teleportProxyAddr = os.Getenv("TELEPORT_PROXY_ADDR")
 	teleportAuthAddr = os.Getenv("TELEPORT_AUTH_ADDR")
-	teleportIdentityFile = os.Getenv("TELEPORT_IDENTITY_FILE")
 	githubOAuthConfig = &oauth2.Config{
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
@@ -54,7 +52,7 @@ func init() {
 	}
 	jwtSecretKey = []byte(secretString)
 
-	if teleportProxyAddr == "" || teleportAuthAddr == "" || teleportIdentityFile == "" || githubOAuthConfig.ClientID == "" {
+	if teleportProxyAddr == "" || teleportAuthAddr == "" || githubOAuthConfig.ClientID == "" {
 		log.Println("경고: 일부 기능에 필요한 환경 변수가 설정되지 않았을 수 있습니다.")
 	}
 }
@@ -63,7 +61,7 @@ func main() {
 	// 1. 기존 API용 Go 클라이언트 초기화
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	creds := client.LoadIdentityFile(teleportIdentityFile)
+	creds := client.LoadIdentityFile(machineIDIdentityFile)
 	mainClient, err := client.New(ctx, client.Config{
 		Addrs: []string{teleportAuthAddr}, Credentials: []client.Credentials{creds}, DialOpts: []grpc.DialOption{},
 	})

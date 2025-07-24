@@ -89,7 +89,6 @@ jobs:
               -e GITHUB_CALLBACK_URL='${{ secrets.CALLBACK_URL }}' \
               -e TELEPORT_PROXY_ADDR='${{ secrets.TELEPORT_PROXY_ADDR }}' \
               -e TELEPORT_AUTH_ADDR='${{ secrets.TELEPORT_AUTH_ADDR }}' \
-              -e TELEPORT_IDENTITY_FILE='${{ secrets.TELEPORT_IDENTITY_FILE }}' \
               -e JWT_SECRET_KEY='${{ secrets.JWT_SECRET_KEY }}' \
               --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
               ${{ env.DOCKER_IMAGE_NAME }}:latest
