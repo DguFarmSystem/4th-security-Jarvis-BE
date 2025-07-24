@@ -263,7 +263,7 @@ func handleWebSocket(c *gin.Context) {
 	}
 	defer os.RemoveAll(certDir)
 
-	loginCmd := exec.Command("tsh", "login", "--proxy", teleportProxyAddr, "--identity", teleportIdentityFile, "--out", certDir)
+	loginCmd := exec.Command("tsh", "login", "--proxy", "teleport-daemon:3080", "--identity", teleportIdentityFile, "--out", certDir)
 	if output, err := loginCmd.CombinedOutput(); err != nil {
 		// [수정] 로그 메시지를 더 명확하게 변경합니다.
 		log.Printf("Bot User(%s)로 로그인 실패: %v, 출력: %s", teleportIdentityFile, err, string(output))
