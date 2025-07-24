@@ -22,6 +22,8 @@ import (
 	"google.golang.org/grpc"
 )
 
+const machineIDIdentityFile = "/opt/machine-id/identity"
+
 var (
 	githubOAuthConfig    *oauth2.Config
 	teleportProxyAddr    string
@@ -255,26 +257,17 @@ func handleWebSocket(c *gin.Context) {
 	}
 
 	log.Printf("사용자 '%s'를 위해 SSH 세션 준비 중... (대상: %s@%s)", githubUser, loginUser, nodeHost)
-	// 1단계: Bot User로 로그인하여 세션을 생성합니다.
-	// [중요] --out 플래그를 제거하여, 기본 프로필 저장소(~/.tsh)에 세션을 저장합니다.
-	loginCmd := exec.Command("tsh", "login",
-		"--proxy", "openswdev.duckdns.org:3080",
-		"--identity", teleportIdentityFile,
-	)
-	log.Printf("[DEBUG] Step 1: Executing login command: %s", strings.Join(loginCmd.Args, " "))
-	if output, err := loginCmd.CombinedOutput(); err != nil {
-		log.Printf("Bot User 로그인 실패: %v, 출력: %s", err, string(output))
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	log.Println("Bot User 로그인 성공. 유효한 세션이 생성되었습니다.")
 
-	sshCmd := exec.Command("tsh", "--debug", "ssh",
+	// 3. [변경됨] tsh ssh 명령어를 머신 ID 방식으로 실행합니다.
+	// 'tsh login' 단계는 완전히 제거되었습니다.
+	// sudo를 사용하여 root 소유의 신원 파일을 읽을 수 있도록 합니다.
+	sshCmd := exec.Command("sudo", "tsh", "ssh",
 		"--proxy", "openswdev.duckdns.org:3080",
-		"--user", githubUser,
+		"-i", machineIDIdentityFile, // -i 플래그로 머신 ID 신원 파일을 직접 지정
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 	)
-	log.Printf("[DEBUG] Step 2: Executing ssh command: %s", strings.Join(sshCmd.Args, " "))
+	log.Printf("[DEBUG] Executing command: %s", strings.Join(sshCmd.Args, " "))
+
 	// [추가] '키보드'에 해당하는 stdin 파이프를 가져옵니다.
 
 	// --- 여기서부터 파이프 연결, 프로세스 시작, 데이터 중계 로직 ---
