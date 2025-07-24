@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-s -w" -o /app/server .
 
 # --- 2단계: 최종 실행 환경 ---
 # [수정] 경량화된 alpine 이미지를 기본으로 사용합니다.
-FROM alpine:3.19
+FROM ubuntu:minimal
 
 # [추가] Teleport 버전을 변수로 정의하여 관리 용이성을 높입니다.
 # 클러스터 버전에 맞춰 이 값을 수정할 수 있습니다.
