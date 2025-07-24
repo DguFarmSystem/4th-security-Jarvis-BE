@@ -59,20 +59,23 @@ jobs:
                 docker stop backend-api-c
                 docker rm backend-api-c
             fi
+
+            # 1. 이전 배포에서 생성된 봇이 있다면 삭제합니다.
+            # '|| true'를 붙여, 봇이 존재하지 않아 오류가 발생하더라도 스크립트가 중단되지 않도록 합니다.
+            echo "Cleaning up bot from previous deployment..."
+            docker exec teleport-daemon tctl bots rm jarvis-bot || true
+
+
             # 1. 배포 직전에 teleport-daemon 컨테이너를 통해 일회용 조인 토큰을 생성합니다.
             # --ttl=5m: 이 토큰은 5분만 유효하므로 보안에 매우 유리합니다.
             echo "Generating a new one-time join token for the bot..."
             BOT_JOIN_TOKEN=$(docker exec teleport-daemon tctl bots add jarvis-bot --roles=access --logins=root --ttl=5m | grep 'join token is:' | awk '{print $4}')
             
-            # [추가] 토큰이 정상적으로 추출되었는지 확인하는 방어 로직 (디버깅에 유용)
+            # 토큰이 정상적으로 추출되었는지 확인하는 방어 로직 (디버깅에 유용)
             if [ -z "$BOT_JOIN_TOKEN" ]; then
               echo "Error: Failed to generate or extract bot join token."
               exit 1
-            fi
-            
-            # 서버에 저장된 auth.pem 파일의 절대 경로를 지정합니다.
-            # 이 경로는 실제 파일 위치에 맞게 수정해야 할 수 있습니다.
-            AUTH_PEM_PATH="/home/${{ secrets.GCP_USERNAME }}/teleport-backend/auth.pem"
+            fi        
 
             TELEPORT_DAEMON_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' teleport-daemon)            
             
