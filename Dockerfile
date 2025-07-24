@@ -32,6 +32,7 @@ ARG TELEPORT_VERSION=17.5.4
 RUN apt-get update && apt-get install -y \
     curl \
     tar \
+    sudo \
     ca-certificates \
     --no-install-recommends && \
     # 설치 후 캐시를 삭제하여 최종 이미지 용량을 최적화합니다.
