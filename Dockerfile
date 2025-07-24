@@ -42,8 +42,9 @@ WORKDIR /opt
 
 RUN curl -o teleport.tar.gz "https://cdn.teleport.dev/teleport-v${TELEPORT_VERSION}-linux-amd64-bin.tar.gz" && \
     tar -xzf teleport.tar.gz && \
-    cd teleport && ./install && \
-    cd .. && \
+    # 필요한 바이너리들만 실행 경로에 직접 복사합니다.
+    cp teleport/tsh teleport/tctl teleport/tbot /usr/local/bin/ && \
+    # 설치 후 남은 파일들을 깨끗하게 정리합니다.
     rm -rf teleport teleport.tar.gz
 
 WORKDIR /app
