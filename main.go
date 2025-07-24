@@ -269,7 +269,8 @@ func handleWebSocket(c *gin.Context) {
 	}
 	log.Println("Bot User 로그인 성공. 유효한 세션이 생성되었습니다.")
 
-	sshCmd := exec.Command("tsh", "ssh",
+	sshCmd := exec.Command("tsh", "--debug", "ssh",
+		"--proxy", "openswdev.duckdns.org:3080",
 		"--user", githubUser,
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 	)
