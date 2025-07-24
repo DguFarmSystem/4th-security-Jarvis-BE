@@ -272,13 +272,13 @@ func handleWebSocket(c *gin.Context) {
 	// [수정] 로그 메시지를 더 명확하게 변경합니다.
 	log.Printf("Bot User(%s)로 로그인 성공.", teleportIdentityFile)
 
-	wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--identity", certDir)
+	wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--proxy", teleportProxyAddr, "--identity", certDir, "--user", githubUser)
 	stdout, _ := wsCmd.StdoutPipe()
 	stdin, _ := wsCmd.StdinPipe()
 	wsCmd.Stderr = os.Stderr
 
-	if err := wsCmd.Start(); err != nil {
-		log.Println("'tsh proxy ws' 시작 실패:", err)
+	if err != nil {
+		log.Printf("tsh proxy ws stdout 파이프 생성 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
