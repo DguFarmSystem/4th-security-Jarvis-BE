@@ -255,43 +255,25 @@ func handleWebSocket(c *gin.Context) {
 	}
 
 	log.Printf("사용자 '%s'를 위해 SSH 세션 준비 중... (대상: %s@%s)", githubUser, loginUser, nodeHost)
-	/*
-		certDir, err := os.MkdirTemp("", "teleport-certs-")
-		if err != nil {
-			log.Println("임시 인증서 디렉터리 생성 실패:", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		defer os.RemoveAll(certDir)
-		loginCmd := exec.Command("tsh", "login", "--proxy=", "openswdev.duckdns.org:3080", "--identity=", teleportIdentityFile, "--out=", certDir)
-		log.Printf("[DEBUG] Executing login command: %s", strings.Join(loginCmd.Args, " "))
-		if output, err := loginCmd.CombinedOutput(); err != nil {
-			// [수정] 로그 메시지를 더 명확하게 변경합니다.
-			log.Printf("Bot User(%s)로 로그인 실패: %v, 출력: %s", teleportIdentityFile, err, string(output))
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-		// [수정] 로그 메시지를 더 명확하게 변경합니다.
-		log.Printf("Bot User(%s)로 로그인 성공.", teleportIdentityFile)
-
-		wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--proxy=", "openswdev.duckdns.org:3080", "--identity=", certDir, "--user=", githubUser)
-		log.Printf("[DEBUG] Executing ws command: %s", strings.Join(wsCmd.Args, " "))
-		// [기존 코드] '화면'에 해당하는 stdout 파이프를 가져옵니다.
-		stdout, err := wsCmd.StdoutPipe()
-		if err != nil {
-			log.Printf("tsh proxy ws stdout 파이프 생성 실패: %v", err)
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
-	*/
-	sshCmd := exec.Command("tsh",
+	// 1단계: Bot User로 로그인하여 세션을 생성합니다.
+	// [중요] --out 플래그를 제거하여, 기본 프로필 저장소(~/.tsh)에 세션을 저장합니다.
+	loginCmd := exec.Command("tsh", "login",
 		"--proxy", "openswdev.duckdns.org:3080",
 		"--identity", teleportIdentityFile,
+	)
+	log.Printf("[DEBUG] Step 1: Executing login command: %s", strings.Join(loginCmd.Args, " "))
+	if output, err := loginCmd.CombinedOutput(); err != nil {
+		log.Printf("Bot User 로그인 실패: %v, 출력: %s", err, string(output))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	log.Println("Bot User 로그인 성공. 유효한 세션이 생성되었습니다.")
+
+	sshCmd := exec.Command("tsh", "ssh",
 		"--user", githubUser,
-		"ssh",
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 	)
-	log.Printf("[DEBUG] Executing final ssh command: %s", strings.Join(sshCmd.Args, " "))
+	log.Printf("[DEBUG] Step 2: Executing ssh command: %s", strings.Join(sshCmd.Args, " "))
 	// [추가] '키보드'에 해당하는 stdin 파이프를 가져옵니다.
 
 	// --- 여기서부터 파이프 연결, 프로세스 시작, 데이터 중계 로직 ---
