@@ -263,13 +263,15 @@ func handleWebSocket(c *gin.Context) {
 	}
 	defer os.RemoveAll(certDir)
 
-	loginCmd := exec.Command("tsh", "login", "--proxy", teleportProxyAddr, "--identity", teleportIdentityFile, "--impersonate", githubUser, "--out", certDir)
+	loginCmd := exec.Command("tsh", "login", "--proxy", teleportProxyAddr, "--identity", teleportIdentityFile, "--out", certDir)
 	if output, err := loginCmd.CombinedOutput(); err != nil {
-		log.Printf("사용자 %s 대리 로그인 실패: %v, 출력: %s", githubUser, err, string(output))
+		// [수정] 로그 메시지를 더 명확하게 변경합니다.
+		log.Printf("Bot User(%s)로 로그인 실패: %v, 출력: %s", teleportIdentityFile, err, string(output))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	log.Printf("사용자 '%s' 대리 로그인 성공.", githubUser)
+	// [수정] 로그 메시지를 더 명확하게 변경합니다.
+	log.Printf("Bot User(%s)로 로그인 성공.", teleportIdentityFile)
 
 	wsCmd := exec.Command("tsh", "proxy", "ws", fmt.Sprintf("%s@%s", loginUser, nodeHost), "--identity", certDir)
 	stdout, _ := wsCmd.StdoutPipe()
