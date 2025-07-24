@@ -63,6 +63,8 @@ jobs:
             # 서버에 저장된 auth.pem 파일의 절대 경로를 지정합니다.
             # 이 경로는 실제 파일 위치에 맞게 수정해야 할 수 있습니다.
             AUTH_PEM_PATH="/home/${{ secrets.GCP_USERNAME }}/teleport-backend/auth.pem"
+
+            TELEPORT_DAEMON_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' teleport-daemon)
             
             # 최신 이미지로 새로운 컨테이너를 실행합니다.
             # --network: 'teleport-daemon'과 통신하기 위해 사설 네트워크에 연결합니다.
@@ -78,4 +80,5 @@ jobs:
               -e TELEPORT_AUTH_ADDR='${{ secrets.TELEPORT_AUTH_ADDR }}' \
               -e TELEPORT_IDENTITY_FILE='${{ secrets.TELEPORT_IDENTITY_FILE }}' \
               -e JWT_SECRET_KEY='${{ secrets.JWT_SECRET_KEY }}' \
+              --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
               ${{ env.DOCKER_IMAGE_NAME }}:latest
