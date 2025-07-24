@@ -52,14 +52,11 @@ WORKDIR /app
 # 1단계(빌더)에서 컴파일된 Go 바이너리만 복사합니다.
 COPY --from=builder /app/server /app/server
 
-# [보안] auth.pem과 같은 민감한 파일은 이미지에 포함시키지 않습니다.
-# 배포 시점에 deploy.yml 스크립트가 볼륨 마운트(-v)로 주입합니다.
+# [추가] 컨테이너 시작 시 실행될 스크립트를 복사하고 실행 권한을 부여합니다.
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-# 컨테이너가 8080 포트를 외부에 노출합니다.
 EXPOSE 8080
 
-# 중요: auth.pem 파일은 이미지에 포함시키지 않습니다.
-
-# 컨테이너가 시작될 때 API 서버를 실행합니다.
-#CMD ["/app/server"]
-ENTRYPOINT ["tail", "-f", "/dev/null"]
+# [수정] 컨테이너 시작 시 entrypoint.sh를 실행하도록 변경합니다.
+ENTRYPOINT ["/entrypoint.sh"]
