@@ -327,26 +327,37 @@ func (t *TeleportClientWrapper) ProvisionTeleportUser(ctx context.Context, githu
 	_, err := t.Client.GetUser(ctx, githubUsername, false)
 
 	// 사용자가 존재하지 않는 경우 (err != nil 이고, NotFound 에러일 때)
-	if err != nil && trace.IsNotFound(err) {
-		log.Printf("[INFO] 신규 사용자 '%s'를 생성합니다.", githubUsername)
-		// 새로운 사용자 객체를 정의합니다.
-		user, err := types.NewUser(githubUsername)
-		if err != nil {
-			return trace.Wrap(err)
+	// 2. 에러가 발생했을 경우에만 처리 로직을 실행합니다.
+	if err != nil {
+		// 3. 에러의 종류가 'NotFound'가 맞는지 명확하게 확인합니다.
+		//    이것이 에러를 안정적으로 감지하는 핵심입니다.
+		if trace.IsNotFound(err) {
+			log.Printf("[INFO] 신규 사용자 '%s'를 생성합니다.", githubUsername)
+
+			// 새로운 사용자 객체를 정의합니다.
+			user, err := types.NewUser(githubUsername)
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			user.SetRoles(defaultRoles)
+
+			// Teleport에 사용자 생성을 요청합니다.
+			_, err = t.Client.CreateUser(ctx, user)
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			log.Printf("[INFO] 사용자 '%s'가 역할 '%v'로 성공적으로 생성되었습니다.", githubUsername, defaultRoles)
+			// 사용자 생성이 성공적으로 완료되었으므로, 에러 없이(nil) 함수를 종료합니다.
+			return nil
 		}
-		user.SetRoles(defaultRoles)
-		// Teleport에 사용자 생성을 요청합니다.
-		_, err = t.Client.CreateUser(ctx, user)
-		if err != nil {
-			return trace.Wrap(err)
-		}
-		log.Printf("[INFO] 사용자 '%s'가 역할 '%v'로 성공적으로 생성되었습니다.", githubUsername, defaultRoles)
-		return nil
-	} else if err != nil {
-		// NotFound가 아닌 다른 에러인 경우
+
+		// 4. 'NotFound'가 아닌 다른 종류의 에러(예: 권한 부족, 네트워크 문제 등)라면,
+		//    문제를 보고하기 위해 해당 에러를 그대로 반환합니다.
 		return trace.Wrap(err)
 	}
-	// 함수가 정상적으로 끝났음을 알리기 위해 nil을 반환합니다. (return 추가)
+
+	// 5. 에러가 전혀 발생하지 않았다면 (err == nil), 사용자가 이미 존재한다는 의미입니다.
+	log.Printf("[INFO] 기존 사용자 '%s'의 로그인을 확인했습니다.", githubUsername)
 	return nil
 }
 
