@@ -76,7 +76,7 @@ func main() {
 
 	// 2-1. 기존 API 엔드포인트 (/api/v1/*)
 	apiV1 := router.Group("/api/v1")
-	apiV1.Use(AuthMiddleware())
+	apiV1.Use(AuthenticateJWT())
 	{
 		apiV1.GET("/users", clientWrapper.GetUsers)
 		apiV1.GET("/roles", clientWrapper.GetRoles)
@@ -85,27 +85,56 @@ func main() {
 	}
 
 	// 2-2. 신규 GitHub SSO 및 웹 터미널 엔드포인트
+
 	router.GET("/login", handleGitHubLogin)
 	router.GET("/callback", handleGitHubCallback)
-	router.GET("/ws", handleWebSocket)
+	router.GET("/ws", AuthenticateJWT(), handleWebSocket)
 
 	// 3. 서버 시작
 	log.Println("통합 백엔드 서버를 8080 포트에서 시작합니다.")
 	router.Run(":8080")
 }
 
-// AuthMiddleware는 Teleport OSS 버전의 헤더 기반 인증을 처리하는 미들웨어입니다.
-func AuthMiddleware() gin.HandlerFunc {
+// AuthenticateJWT는 Teleport OSS 버전의 헤더 기반 인증을 처리하는 미들웨어입니다.
+func AuthenticateJWT() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 이후 쿠키의 JWT를 검증하는 로직으로 변경
+
+		tokenString, err := c.Cookie("auth_token")
+		if err != nil {
+			log.Println("쿠키에서 GitHub 사용자 정보를 찾을 수 없습니다. 로그인이 필요합니다.")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		// 2. 읽어온 JWT 토큰을 파싱하고 검증합니다.
+		claims := jwt.MapClaims{}
+		_, err = jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			// 서명 방식을 확인하고, init()에서 로드한 비밀 키를 반환합니다.
+			return jwtSecretKey, nil
+		})
+
+		if err != nil {
+			log.Printf("유효하지 않은 JWT 토큰입니다: %v", err)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		// 3. 토큰의 클레임(내용)에서 사용자 이름을 추출합니다.
+		githubUser, ok := claims["username"].(string)
+		if !ok || githubUser == "" {
+			log.Println("JWT 토큰에 사용자 이름이 포함되어 있지 않습니다.")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		// 4. 인증 성공! 사용자 정보를 Gin 컨텍스트에 저장하여
+		// 이후의 핸들러(예: handleWebSocket)에서 사용할 수 있도록 합니다.
+		c.Set("username", githubUser)
+
 		c.Next()
 	}
 }
 
 func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
-	username, _ := c.Get("username")
-	log.Printf("'%s' 사용자의 요청으로 사용자 목록을 조회합니다.", username)
-
 	users, err := t.Client.GetUsers(c.Request.Context(), false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록을 가져오는 데 실패했습니다: " + err.Error()})
@@ -114,7 +143,6 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
-// ... 나머지 핸들러 함수들은 기존과 동일합니다 ...
 func (t *TeleportClientWrapper) GetRoles(c *gin.Context) {
 	roles, err := t.Client.GetRoles(c.Request.Context())
 	if err != nil {
@@ -152,7 +180,7 @@ func (t *TeleportClientWrapper) GetAuditEvents(c *gin.Context) {
 }
 
 func handleGitHubLogin(c *gin.Context) {
-	url := githubOAuthConfig.AuthCodeURL("random-state-string", oauth2.AccessTypeOffline)
+	url := githubOAuthConfig.AuthCodeURL("random-state-string", oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("scope", "read:org"))
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
@@ -188,6 +216,39 @@ func handleGitHubCallback(c *gin.Context) {
 
 	log.Printf("[DEBUG] /callback: GitHub 사용자 이름 조회 성공: %s", user.Login)
 
+	// <<<--- 추가된 팀 멤버십 확인 로직 시작 --->>>
+	orgName := "4th-security-Jarvis"
+	teamSlug := "4th-security-jarvis" // 팀 이름이 URL에 사용될 수 있도록 변환된 형태
+
+	// GitHub API를 호출하여 사용자가 팀 멤버인지 확인합니다.
+	teamMembershipURL := fmt.Sprintf("https://api.github.com/orgs/%s/teams/%s/memberships/%s", orgName, teamSlug, user.Login)
+
+	// 이전에 생성한 인증된 클라이언트를 재사용합니다.
+	req, _ := http.NewRequest("GET", teamMembershipURL, nil)
+	teamResp, err := client.Do(req)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "GitHub 팀 정보 조회 실패: "+err.Error())
+		return
+	}
+	defer teamResp.Body.Close()
+
+	// API 응답 코드로 멤버 여부를 판단합니다.
+	// 멤버가 맞으면 200 OK, 멤버가 아니면 404 Not Found를 반환합니다.
+	if teamResp.StatusCode == http.StatusNotFound {
+		log.Printf("[INFO] 로그인 거부: 사용자 '%s'는 팀 '%s'의 멤버가 아님", user.Login, teamSlug)
+		c.String(http.StatusForbidden, "접근 거부: 허가된 팀의 멤버가 아닙니다.")
+		return
+	}
+
+	if teamResp.StatusCode != http.StatusOK {
+		log.Printf("[ERROR] 팀 정보 조회 실패: 상태 코드 %d", teamResp.StatusCode)
+		c.String(http.StatusInternalServerError, "팀 정보를 확인하는 중 오류가 발생했습니다.")
+		return
+	}
+
+	log.Printf("[INFO] 로그인 승인: 사용자 '%s'는 팀 '%s'의 멤버임", user.Login, teamSlug)
+	// <<<--- 추가된 팀 멤버십 확인 로직 끝 --->>>
+
 	claims := jwt.MapClaims{
 		"username": user.Login,                           // GitHub 사용자 이름
 		"exp":      time.Now().Add(time.Hour * 1).Unix(), // 토큰 만료 시간: 1시간
@@ -195,7 +256,7 @@ func handleGitHubCallback(c *gin.Context) {
 	}
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	// [수정] 이제 전역 변수인 jwtSecretKey를 사용하여 토큰을 서명합니다.
+	//  이제 전역 변수인 jwtSecretKey를 사용하여 토큰을 서명합니다.
 	tokenString, err := jwtToken.SignedString(jwtSecretKey)
 
 	log.Printf("[DEBUG] /callback: JWT 생성 성공. 토큰 시작 부분: %s...", tokenString[:10])
@@ -207,7 +268,7 @@ func handleGitHubCallback(c *gin.Context) {
 
 	c.SetCookie(
 		"auth_token", // 쿠키 이름
-		tokenString,  // [수정] 실제 JWT 문자열을 쿠키 값으로 사용
+		tokenString,  //  실제 JWT 문자열을 쿠키 값으로 사용
 		3600,
 		"/",
 		"",    // 도메인을 비워두면 현재 도메인에만 적용됨 (localhost, duckdns 등 모두 동작)
@@ -219,33 +280,36 @@ func handleGitHubCallback(c *gin.Context) {
 }
 
 func handleWebSocket(c *gin.Context) {
-	tokenString, err := c.Cookie("auth_token")
-	if err != nil {
-		log.Println("쿠키에서 GitHub 사용자 정보를 찾을 수 없습니다. 로그인이 필요합니다.")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
+	/*
+		tokenString, err := c.Cookie("auth_token")
 
-	// 2. [추가] 읽어온 JWT 토큰을 파싱하고 검증합니다.
-	claims := jwt.MapClaims{}
-	_, err = jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-		// 서명 방식을 확인하고, init()에서 로드한 비밀 키를 반환합니다.
-		return jwtSecretKey, nil
-	})
-	if err != nil {
-		log.Printf("유효하지 않은 JWT 토큰입니다: %v", err)
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
+		if err != nil {
+			log.Println("쿠키에서 GitHub 사용자 정보를 찾을 수 없습니다. 로그인이 필요합니다.")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
 
-	// 3. [추가] 토큰의 클레임(내용)에서 사용자 이름을 추출합니다.
-	githubUser, ok := claims["username"].(string)
-	if !ok || githubUser == "" {
-		log.Println("JWT 토큰에 사용자 이름이 포함되어 있지 않습니다.")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
+		// 2. 읽어온 JWT 토큰을 파싱하고 검증합니다.
+		claims := jwt.MapClaims{}
+		_, err = jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+			// 서명 방식을 확인하고, init()에서 로드한 비밀 키를 반환합니다.
+			return jwtSecretKey, nil
+		})
+		if err != nil {
+			log.Printf("유효하지 않은 JWT 토큰입니다: %v", err)
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
 
+		// 3. 토큰의 클레임(내용)에서 사용자 이름을 추출합니다.
+		githubUser, ok := claims["username"].(string)
+		if !ok || githubUser == "" {
+			log.Println("JWT 토큰에 사용자 이름이 포함되어 있지 않습니다.")
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+	*/
+	githubUser := c.GetString("username")
 	nodeHost := c.Query("node_host")
 	loginUser := c.Query("login_user")
 	if nodeHost == "" || loginUser == "" {
@@ -266,7 +330,7 @@ func handleWebSocket(c *gin.Context) {
 	)
 	log.Printf("[DEBUG] Executing command: %s", strings.Join(sshCmd.Args, " "))
 
-	// [추가] '키보드'에 해당하는 stdin 파이프를 가져옵니다.
+	// '키보드'에 해당하는 stdin 파이프를 가져옵니다.
 
 	// --- 여기서부터 파이프 연결, 프로세스 시작, 데이터 중계 로직 ---
 	stdout, err := sshCmd.StdoutPipe() // 여기서 stdout 변수 생성
