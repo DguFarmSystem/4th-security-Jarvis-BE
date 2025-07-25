@@ -329,6 +329,12 @@ func (t *TeleportClientWrapper) ProvisionTeleportUser(ctx context.Context, githu
 	// 사용자가 존재하지 않는 경우 (err != nil 이고, NotFound 에러일 때)
 	// 2. 에러가 발생했을 경우에만 처리 로직을 실행합니다.
 	if err != nil {
+		// 디버그 코드 시작>>
+		// IsNotFound 확인 전에, 수신된 에러의 전체 내용을 그대로 출력합니다.
+		// '%T'는 에러의 타입을, '%v'는 에러 메시지를, '%#v'는 구조체의 상세 내용을 보여줍니다.
+		log.Printf("[DEBUG] GetUser API 에러 발생. 타입: %T, 내용: %v", err, err)
+		log.Printf("[DEBUG] 에러 상세 구조: %#v", err)
+		// 디버그 코드 끝 >
 		// 3. 에러의 종류가 'NotFound'가 맞는지 명확하게 확인합니다.
 		//    이것이 에러를 안정적으로 감지하는 핵심입니다.
 		if trace.IsNotFound(err) {
