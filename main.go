@@ -147,7 +147,7 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	log.Printf("[DEBUG] 역할 가장 시도: 현재 사용자 '%s'의 권한으로 API를 호출합니다.", impersonatedUser)
 	// 2. 역할 가장을 위한 메타데이터를 현재 요청의 컨텍스트에 추가합니다.
 	// 이 컨텍스트는 이 API 호출 동안에만 유효합니다.
-	ctx := metadata.AppendToOutgoingContext(c.Request.Context(), "teleport-impersonate-user", impersonatedUser)
+	ctx := metadata.AppendToOutgoingContext(c.Request.Context(), "Teleport-Impersonate-User", impersonatedUser)
 
 	// 디버그 코드 시작
 	md, ok := metadata.FromOutgoingContext(ctx)
