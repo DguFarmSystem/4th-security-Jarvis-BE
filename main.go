@@ -337,7 +337,7 @@ func (t *TeleportClientWrapper) ProvisionTeleportUser(ctx context.Context, githu
 		// 디버그 코드 끝 >
 		// 3. 에러의 종류가 'NotFound'가 맞는지 명확하게 확인합니다.
 		//    이것이 에러를 안정적으로 감지하는 핵심입니다.
-		if trace.IsNotFound(err) {
+		if trace.IsNotFound(err) || strings.Contains(err.Error(), "not found") {
 			log.Printf("[INFO] 신규 사용자 '%s'를 생성합니다.", githubUsername)
 
 			// 새로운 사용자 객체를 정의합니다.
