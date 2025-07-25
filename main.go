@@ -17,9 +17,11 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/trace"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const machineIDIdentityFile = "/opt/machine-id/identity"
@@ -135,7 +137,37 @@ func AuthenticateJWT() gin.HandlerFunc {
 }
 
 func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
-	users, err := t.Client.GetUsers(c.Request.Context(), false)
+	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	log.Printf("[DEBUG] 역할 가장 시도: 현재 사용자 '%s'의 권한으로 API를 호출합니다.", impersonatedUser)
+	// 2. 역할 가장을 위한 메타데이터를 현재 요청의 컨텍스트에 추가합니다.
+	// 이 컨텍스트는 이 API 호출 동안에만 유효합니다.
+	ctx := metadata.AppendToOutgoingContext(c.Request.Context(), "teleport-impersonate-user", impersonatedUser)
+
+	// 디버그 코드 시작
+	md, ok := metadata.FromOutgoingContext(ctx)
+	if !ok {
+		log.Println("[DEBUG] 컨텍스트에서 발신 메타데이터를 찾을 수 없습니다.")
+	} else {
+		// 보기 쉽게 JSON 형태로 변환하여 출력합니다.
+		mdJSON, err := json.MarshalIndent(md, "", "  ")
+		if err != nil {
+			log.Printf("[DEBUG] 메타데이터 JSON 변환 실패: %v", err)
+		} else {
+			// 이 로그가 바로 ctx가 어떻게 전송될지를 보여줍니다.
+			log.Printf("[DEBUG] API 호출에 사용될 gRPC 메타데이터:\n%s", string(mdJSON))
+		}
+	}
+	// 디버그 코드 끝
+
+	// 3. '가장된 클라이언트'를 사용하여 API를 호출합니다.
+	// 이제 이 호출은 Teleport에 의해 'basic-user'의 권한으로 자동 필터링됩니다.
+	users, err := t.Client.GetUsers(ctx, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록을 가져오는 데 실패했습니다: " + err.Error()})
 		return
@@ -144,6 +176,7 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 }
 
 func (t *TeleportClientWrapper) GetRoles(c *gin.Context) {
+
 	roles, err := t.Client.GetRoles(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 목록을 가져오는 데 실패했습니다: " + err.Error()})
@@ -249,6 +282,13 @@ func handleGitHubCallback(c *gin.Context) {
 	log.Printf("[INFO] 로그인 승인: 사용자 '%s'는 팀 '%s'의 멤버임", user.Login, teamSlug)
 	// <<<--- 추가된 팀 멤버십 확인 로직 끝 --->>>
 
+	err = clientWrapper.ProvisionTeleportUser(c.Request.Context(), user.Login)
+	if err != nil {
+		log.Printf("[ERROR] Teleport 사용자 프로비저닝 실패: %v", err)
+		c.String(http.StatusInternalServerError, "사용자 계정을 준비하는 중 오류가 발생했습니다.")
+		return
+	}
+
 	claims := jwt.MapClaims{
 		"username": user.Login,                           // GitHub 사용자 이름
 		"exp":      time.Now().Add(time.Hour * 1).Unix(), // 토큰 만료 시간: 1시간
@@ -279,36 +319,39 @@ func handleGitHubCallback(c *gin.Context) {
 	c.Redirect(http.StatusFound, "http://openswdev.duckdns.org:3000")
 }
 
+func (t *TeleportClientWrapper) ProvisionTeleportUser(ctx context.Context, githubUsername string) error {
+	// 기본적으로 할당할 역할 목록
+	defaultRoles := []string{"basic-user"}
+
+	// 1. 사용자가 이미 존재하는지 확인합니다.
+	_, err := t.Client.GetUser(ctx, githubUsername, false)
+
+	// 사용자가 존재하지 않는 경우 (err != nil 이고, NotFound 에러일 때)
+	if err != nil && trace.IsNotFound(err) {
+		log.Printf("[INFO] 신규 사용자 '%s'를 생성합니다.", githubUsername)
+		// 새로운 사용자 객체를 정의합니다.
+		user, err := types.NewUser(githubUsername)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		user.SetRoles(defaultRoles)
+		// Teleport에 사용자 생성을 요청합니다.
+		_, err = t.Client.CreateUser(ctx, user)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		log.Printf("[INFO] 사용자 '%s'가 역할 '%v'로 성공적으로 생성되었습니다.", githubUsername, defaultRoles)
+		return nil
+	} else if err != nil {
+		// NotFound가 아닌 다른 에러인 경우
+		return trace.Wrap(err)
+	}
+	// 함수가 정상적으로 끝났음을 알리기 위해 nil을 반환합니다. (return 추가)
+	return nil
+}
+
 func handleWebSocket(c *gin.Context) {
-	/*
-		tokenString, err := c.Cookie("auth_token")
 
-		if err != nil {
-			log.Println("쿠키에서 GitHub 사용자 정보를 찾을 수 없습니다. 로그인이 필요합니다.")
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		// 2. 읽어온 JWT 토큰을 파싱하고 검증합니다.
-		claims := jwt.MapClaims{}
-		_, err = jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
-			// 서명 방식을 확인하고, init()에서 로드한 비밀 키를 반환합니다.
-			return jwtSecretKey, nil
-		})
-		if err != nil {
-			log.Printf("유효하지 않은 JWT 토큰입니다: %v", err)
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		// 3. 토큰의 클레임(내용)에서 사용자 이름을 추출합니다.
-		githubUser, ok := claims["username"].(string)
-		if !ok || githubUser == "" {
-			log.Println("JWT 토큰에 사용자 이름이 포함되어 있지 않습니다.")
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-	*/
 	githubUser := c.GetString("username")
 	nodeHost := c.Query("node_host")
 	loginUser := c.Query("login_user")
