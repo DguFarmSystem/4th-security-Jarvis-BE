@@ -92,9 +92,17 @@ func main() {
 	router.GET("/callback", handleGitHubCallback)
 	router.GET("/ws", AuthenticateJWT(), handleWebSocket)
 
-	// 3. 서버 시작
-	log.Println("통합 백엔드 서버를 8080 포트에서 시작합니다.")
-	router.Run(":8080")
+	// HTTPS용 인증서/키 파일 경로
+	certFile := "/etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem"
+	keyFile := "/etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem"
+
+	// log 표시는 선택
+	log.Println("통합 백엔드 서버를 8080 포트(HTTPS)에서 시작합니다.")
+
+	// *** HTTPS 서버 실행 ***
+	if err := router.RunTLS(":8080", certFile, keyFile); err != nil {
+		log.Fatalf("HTTPS 서버 실행 실패: %v", err)
+	}
 }
 
 // AuthenticateJWT는 Teleport OSS 버전의 헤더 기반 인증을 처리하는 미들웨어입니다.

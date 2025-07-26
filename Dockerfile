@@ -46,6 +46,10 @@ WORKDIR /app
 # 1단계(빌더)에서 컴파일된 Go 바이너리만 복사합니다.
 COPY --from=builder /app/server /app/server
 
+# keys 폴더에 있는 두개의 키를 복사합니다.
+COPY keys/fullchain.pem keys/privkey.pem /etc/letsencrypt/live/openswdev.duckdns.org/
+
+
 # [추가] 컨테이너 시작 시 실행될 스크립트를 복사하고 실행 권한을 부여합니다.
 COPY entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && \
