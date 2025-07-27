@@ -79,7 +79,7 @@ jobs:
 
             TELEPORT_DAEMON_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' teleport-daemon)            
             
-            # 최신 이미지로 새로운 컨테이너를 실행합니다.            
+            # 최신 이미지로 새로운 컨테이너를 실행합니다.
             docker run -d --name backend-api-c \
               --network=teleport-net \
               -p 8080:8080 \
@@ -90,5 +90,7 @@ jobs:
               -e TELEPORT_PROXY_ADDR='${{ secrets.TELEPORT_PROXY_ADDR }}' \
               -e TELEPORT_AUTH_ADDR='${{ secrets.TELEPORT_AUTH_ADDR }}' \
               -e JWT_SECRET_KEY='${{ secrets.JWT_SECRET_KEY }}' \
+              -v ~/teleport-daemon/keys/fullchain.pem:/etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem \
+              -v ~/teleport-daemon/keys/privkey.pem:/etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem \
               --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
               ${{ env.DOCKER_IMAGE_NAME }}:latest
