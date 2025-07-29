@@ -3,7 +3,13 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"net/http"
@@ -15,13 +21,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/gravitational/teleport/api/client"
+	"github.com/gravitational/teleport/api/client" // UserCertsRequest를 위해 필요
+	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/utils/keys"
 	"github.com/gravitational/trace"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/github"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 const machineIDIdentityFile = "/opt/machine-id/identity"
@@ -151,36 +158,84 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
 		return
 	}
-
 	log.Printf("[DEBUG] 역할 가장 시도: 현재 사용자 '%s'의 권한으로 API를 호출합니다.", impersonatedUser)
-	// 2. 역할 가장을 위한 메타데이터를 현재 요청의 컨텍스트에 추가합니다.
-	// 이 컨텍스트는 이 API 호출 동안에만 유효합니다.
-	ctx := metadata.AppendToOutgoingContext(c.Request.Context(), "Teleport-Impersonate-User", impersonatedUser)
 
-	// 디버그 코드 시작
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if !ok {
-		log.Println("[DEBUG] 컨텍스트에서 발신 메타데이터를 찾을 수 없습니다.")
-	} else {
-		// 보기 쉽게 JSON 형태로 변환하여 출력합니다.
-		mdJSON, err := json.MarshalIndent(md, "", "  ")
-		if err != nil {
-			log.Printf("[DEBUG] 메타데이터 JSON 변환 실패: %v", err)
-		} else {
-			// 이 로그가 바로 ctx가 어떻게 전송될지를 보여줍니다.
-			log.Printf("[DEBUG] API 호출에 사용될 gRPC 메타데이터:\n%s", string(mdJSON))
-		}
-	}
-	// 디버그 코드 끝
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
 
-	// 3. '가장된 클라이언트'를 사용하여 API를 호출합니다.
-	// 이제 이 호출은 Teleport에 의해 'basic-user'의 권한으로 자동 필터링됩니다.
-	users, err := t.Client.GetUsers(ctx, false)
+	// 2. 먼저, '나'를 증명할 개인키/공개키 쌍을 만듭니다. (개인키: 나만 아는 비밀, 공개키: 나의 얼굴)
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록을 가져오는 데 실패했습니다: " + err.Error()})
+		log.Printf("임시 private key 생성 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장 중 키 생성에 실패했습니다."})
 		return
 	}
+
+	// 3. 생성된 공개 키를 Teleport가 요구하는 형식으로 변환합니다.
+	publicKeyBytes, err := keys.MarshalPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		log.Printf("public key 마샬링 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장 중 키 마샬링에 실패했습니다."})
+		return
+	}
+
+	// 4. '내 얼굴(공개키)'을 Teleport에 보내 '이 얼굴이 OOO가 맞다'는 공식 인증서 발급을 요청합니다.
+	certs, err := t.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
+		TLSPublicKey: publicKeyBytes,
+		Username:     impersonatedUser,
+		Expires:      time.Now().Add(5 * time.Minute),
+	})
+	if err != nil {
+		log.Printf("사용자 '%s'의 인증서 발급 실패: %v", impersonatedUser, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장에 실패했습니다."})
+		return
+	}
+
+	// 5. 처음에 생성했던 '비밀 열쇠(개인키)'를 PEM 형식으로 인코딩합니다.
+	privateKeyDER, err := x509.MarshalECPrivateKey(privateKey)
+	if err != nil {
+		log.Printf("private key를 DER 형식으로 마샬링하는데 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장 중 키 인코딩에 실패했습니다."})
+		return
+	}
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privateKeyDER})
+
+	// 6. Teleport가 발급해준 '인증서(certs.TLS)'와 내가 갖고 있던 '개인키(privateKeyPEM)'를 합쳐
+	//    완전한 신원 증명 세트(tls.Certificate)를 만듭니다.
+	keyPair, err := tls.X509KeyPair(certs.TLS, privateKeyPEM)
+	if err != nil {
+		log.Printf("임시 인증서로부터 TLS 키 쌍을 생성하는데 실패했습니다: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장에 실패했습니다."})
+		return
+	}
+
+	// 7. 이 완전한 신원 증명 세트를 사용하여 client.Credentials 인터페이스를 만족하는 객체를 생성합니다.
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{keyPair},
+	}
+	impersonatedCreds := client.LoadTLS(tlsConfig)
+
+	// 8. 생성된 Credentials를 사용하여 '가장된 클라이언트'를 최종적으로 선언(초기화)합니다.
+	impersonatedClient, err := client.New(ctx, client.Config{
+		Addrs:       []string{teleportAuthAddr},
+		Credentials: []client.Credentials{impersonatedCreds},
+	})
+	if err != nil {
+		log.Printf("가장된 Teleport 클라이언트 생성 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장 클라이언트 생성에 실패했습니다."})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	// 9. '가장된 클라이언트'를 사용하여 API를 호출합니다.
+	users, err := impersonatedClient.GetUsers(ctx, false)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다."})
+		return
+	}
+
 	c.JSON(http.StatusOK, users)
+
 }
 
 func (t *TeleportClientWrapper) GetRoles(c *gin.Context) {
