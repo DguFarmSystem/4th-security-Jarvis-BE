@@ -1,0 +1,27 @@
+version: v2
+onboarding:
+  token: "${JOIN_TOKEN}"
+  join_method: token
+storage:
+  type: directory
+  path: /var/lib/teleport/bot
+  symlinks: try-secure
+  acls: try
+services:
+  - type: identity
+    destination:
+      type: directory
+      path: /opt/machine-id
+      symlinks: try-secure
+      acls: try
+    ssh_config: "on"
+    allow_reissue: true
+    impersonate_user: '*'
+    impersonate_roles:
+      - '*'
+debug: true
+proxy_server: openswdev.duckdns.org:3080
+credential_ttl: 1h0m0s
+renewal_interval: 20m0s
+oneshot: false
+fips: false

@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y \
     tar \
     sudo \
     ca-certificates \
+    gettext-base \
     --no-install-recommends && \
     # 설치 후 캐시를 삭제하여 최종 이미지 용량을 최적화합니다.
     rm -rf /var/lib/apt/lists/*
@@ -45,6 +46,8 @@ WORKDIR /app
 
 # 1단계(빌더)에서 컴파일된 Go 바이너리만 복사합니다.
 COPY --from=builder /app/server /app/server
+# tbot.yaml.template 파일을 이미지에 포함 (예시 위치: /etc)
+COPY tbot.yaml.template /etc/tbot.yaml.template
 
 # [추가] 컨테이너 시작 시 실행될 스크립트를 복사하고 실행 권한을 부여합니다.
 COPY entrypoint.sh /entrypoint.sh
