@@ -10,7 +10,9 @@ outputs:
     destination:
       type: directory
       path: /opt/machine-id/basic-user
-      allow_reissue: true
+    allow_reissue: true
+    roles:
+      - basic-user
   - type: identity
     destination:
       type: directory
