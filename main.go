@@ -60,10 +60,8 @@ func init() {
 
 func main() {
 	// 1. 기존 API용 Go 클라이언트 초기화
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 	creds := client.LoadIdentityFile(machineIDIdentityFile)
-	mainClient, err := client.New(ctx, client.Config{
+	mainClient, err := client.New(context.Background(), client.Config{
 		Addrs: []string{teleportAuthAddr}, Credentials: []client.Credentials{creds}, DialOpts: []grpc.DialOption{},
 	})
 	if err != nil {
@@ -167,81 +165,6 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 
 	clientWrapper = &TeleportClientWrapper{Client: userClient}
 
-	/*
-		// 2. 먼저, '나'를 증명할 개인키/공개키 쌍을 만듭니다. (개인키: 나만 아는 비밀, 공개키: 나의 얼굴)
-		privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			log.Printf("임시 private key 생성 실패: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장 중 키 생성에 실패했습니다."})
-			return
-		}
-
-		// 3. 생성된 공개 키를 Teleport가 요구하는 형식으로 변환합니다.
-		publicKeyBytes, err := keys.MarshalPublicKey(&privateKey.PublicKey)
-		if err != nil {
-			log.Printf("public key 마샬링 실패: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장 중 키 마샬링에 실패했습니다."})
-			return
-		}
-
-		// [디버그 로그 추가] 어떤 요청을 보내는지 정확히 로깅합니다.
-		certRequest := proto.UserCertsRequest{
-			TLSPublicKey: publicKeyBytes,
-			Username:     impersonatedUser,
-			Expires:      time.Now().Add(5 * time.Minute),
-		}
-		log.Printf("[DEBUG] Teleport에 인증서 발급 요청: Username=%s, Expires=%s", certRequest.Username, certRequest.Expires)
-
-		// 4. '내 얼굴(공개키)'을 Teleport에 보내 '이 얼굴이 OOO가 맞다'는 공식 인증서 발급을 요청합니다.
-		certs, err := t.Client.GenerateUserCerts(ctx, certRequest)
-		if err != nil {
-			// [디버그 로그 추가] Teleport로부터 받은 에러를 상세하게 출력합니다.
-			// trace.Wrap을 사용하면 더 풍부한 에러 정보를 얻을 수 있습니다.
-			wrappedErr := trace.Wrap(err)
-			log.Printf("사용자 '%s'의 인증서 발급 실패: %v", impersonatedUser, wrappedErr)
-			log.Printf("[DEBUG] Full error details from Teleport: %#v", wrappedErr)
-
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장에 실패했습니다."})
-			return
-		}
-
-		// 5. 처음에 생성했던 '비밀 열쇠(개인키)'를 PEM 형식으로 인코딩합니다.
-		privateKeyDER, err := x509.MarshalECPrivateKey(privateKey)
-		if err != nil {
-			log.Printf("private key를 DER 형식으로 마샬링하는데 실패: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장 중 키 인코딩에 실패했습니다."})
-			return
-		}
-		privateKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: privateKeyDER})
-
-		// 6. Teleport가 발급해준 '인증서(certs.TLS)'와 내가 갖고 있던 '개인키(privateKeyPEM)'를 합쳐
-		//    완전한 신원 증명 세트(tls.Certificate)를 만듭니다.
-		keyPair, err := tls.X509KeyPair(certs.TLS, privateKeyPEM)
-		if err != nil {
-			log.Printf("임시 인증서로부터 TLS 키 쌍을 생성하는데 실패했습니다: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장에 실패했습니다."})
-			return
-		}
-
-		// 7. 이 완전한 신원 증명 세트를 사용하여 client.Credentials 인터페이스를 만족하는 객체를 생성합니다.
-		tlsConfig := &tls.Config{
-			Certificates: []tls.Certificate{keyPair},
-		}
-		impersonatedCreds := client.LoadTLS(tlsConfig)
-
-		// 8. 생성된 Credentials를 사용하여 '가장된 클라이언트'를 최종적으로 선언(초기화)합니다.
-		impersonatedClient, err := client.New(ctx, client.Config{
-			Addrs:       []string{teleportAuthAddr},
-			Credentials: []client.Credentials{impersonatedCreds},
-		})
-		if err != nil {
-			log.Printf("가장된 Teleport 클라이언트 생성 실패: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장 클라이언트 생성에 실패했습니다."})
-			return
-		}
-		defer impersonatedClient.Close()
-	*/
-	// 9. '가장된 클라이언트'를 사용하여 API를 호출합니다.
 	users, err := clientWrapper.Client.GetUsers(ctx, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다."})
@@ -400,8 +323,12 @@ func (t *TeleportClientWrapper) ProvisionTeleportUser(ctx context.Context, githu
 	// 기본적으로 할당할 역할 목록
 	defaultRoles := []string{"basic-user"}
 
+	// [추가] 별도의 타임아웃 컨텍스트 생성 (전역 클라이언트와 무관)
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
 	// 1. 사용자가 이미 존재하는지 확인합니다.
-	_, err := t.Client.GetUser(ctx, githubUsername, false)
+	_, err := t.Client.GetUser(reqCtx, githubUsername, false)
 
 	// 사용자가 존재하지 않는 경우 (err != nil 이고, NotFound 에러일 때)
 	// 2. 에러가 발생했을 경우에만 처리 로직을 실행합니다.
@@ -425,7 +352,7 @@ func (t *TeleportClientWrapper) ProvisionTeleportUser(ctx context.Context, githu
 			user.SetRoles(defaultRoles)
 
 			// Teleport에 사용자 생성을 요청합니다.
-			_, err = t.Client.CreateUser(ctx, user)
+			_, err = t.Client.CreateUser(reqCtx, user)
 			if err != nil {
 				return trace.Wrap(err)
 			}
