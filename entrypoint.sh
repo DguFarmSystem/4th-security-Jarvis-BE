@@ -2,15 +2,15 @@
 # entrypoint.sh
 set -e
 
-echo "[DEBUG] Final /etc/tbot.yaml content:"
-cat /etc/tbot.yaml
-
 envsubst < /etc/tbot.yaml.template > /etc/tbot.yaml
 
+tbot start -c /etc/tbot.yaml &
+
+echo "[DEBUG] Final /etc/tbot.yaml content:"
+
+cat /etc/tbot.yaml
 # 1. 환경 변수로 전달된 일회용 조인 토큰을 사용하여 tbot을 백그라운드로 실행합니다.
 #    tbot은 인증서를 /opt/machine-id 디렉터리에 자동으로 생성하고 갱신합니다.
-# tbot 실행: 환경변수 JOIN_TOKEN을 tbot.yaml 내에서 치환해서 사용하므로 -c 옵션만 사용
-tbot start -c /etc/tbot.yaml &
 
 # 2. tbot이 처음 인증서를 생성할 때까지 잠시 대기합니다 (안정성을 위해).
 echo "Waiting 10 seconds for identity files to be generated..."
