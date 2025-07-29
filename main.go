@@ -151,21 +151,29 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	}
 	log.Printf("[DEBUG] 역할 가장 시도: 현재 사용자 '%s'의 권한으로 API를 호출합니다.", impersonatedUser)
 
+	identityFilePath := fmt.Sprintf("/opt/machine-id/%s-identity/identity", impersonatedUser)
+	log.Printf("[DEBUG] 사용할 인증서 파일 경로: %s", identityFilePath)
+
+	log.Printf("[DEBUG] 전역 t.Client (보증인 역할): %T, %v", t.Client, t.Client)
+
+	creds := client.LoadIdentityFile(identityFilePath)
+
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	creds := client.LoadIdentityFile("/opt/machine-id/CometWoo-identity/identity")
-	userClient, err := client.New(ctx, client.Config{
-		Addrs: []string{teleportAuthAddr}, Credentials: []client.Credentials{creds}, DialOpts: []grpc.DialOption{},
+	impersonatedClient, err := client.New(ctx, client.Config{
+		Addrs:       []string{teleportAuthAddr},
+		Credentials: []client.Credentials{creds},
+		//DialOpts: []grpc.DialOption{},
 	})
 	if err != nil {
-		log.Fatalf("Teleport API 클라이언트 생성 실패: %v", err)
+		log.Printf("사용자 '%s'의 클라이언트 생성 실패 (인증서 파일 확인 필요): %v", impersonatedUser, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 클라이언트 생성에 실패했습니다."})
+		return
 	}
-	defer userClient.Close()
+	defer impersonatedClient.Close()
 
-	clientWrapper = &TeleportClientWrapper{Client: userClient}
-
-	users, err := clientWrapper.Client.GetUsers(ctx, false)
+	users, err := impersonatedClient.GetUsers(ctx, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다."})
 		return
