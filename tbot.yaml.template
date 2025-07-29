@@ -7,21 +7,44 @@ storage:
   path: /var/lib/teleport/bot
   symlinks: try-secure
   acls: try
-services:
+# 생성할 자격 증명(인증서)들을 정의하는 섹션
+outputs:
   - type: identity
+    # 봇의 기본 자격 증명을 저장할 위치
     destination:
       type: directory
       path: /opt/machine-id
-      symlinks: try-secure
-      acls: try
     ssh_config: "on"
-    allow_reissue: true
-    impersonate_user: '*'
+
+  # 두 번째 Output: 'CometWoo' 사용자를 위한 인증서
+  - type: identity
+    # 'CometWoo'의 자격 증명을 저장할 위치 (경로를 다르게 지정)
+    destination:
+      type: directory
+      path: /opt/machine-id/CometWoo-identity
+    # 'CometWoo'를 가장하도록 설정
+    impersonate_user: CometWoo
+    # 'CometWoo'가 가진 역할들을 명시 (예: developer)
     impersonate_roles:
-      - '*'
-debug: true
+      - basic-user
+    # 필요시 재발급 허용
+    allow_reissue: true
+
+  # 세 번째 Output: 'clapppp' 사용자를 위한 인증서
+  - type: identity
+    # 'clapppp'의 자격 증명을 저장할 위치
+    destination:
+      type: directory
+      path: /opt/machine-id/clapppp-identity
+    # 'clapppp'를 가장하도록 설정
+    impersonate_user: clapppp
+    # 'clapppp'가 가진 역할들을 명시 (예: readonly)
+    impersonate_roles:
+      - basic-user
+    allow_reissue: true
+
+# Teleport 프록시 서버 주소
 proxy_server: openswdev.duckdns.org:3080
-credential_ttl: 1h0m0s
-renewal_interval: 20m0s
-oneshot: false
-fips: false
+
+# 기타 전역 설정
+debug: true
