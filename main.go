@@ -149,12 +149,11 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
 		return
 	}
-	log.Printf("[DEBUG] 역할 가장 시도: 현재 사용자 '%s'의 권한으로 API를 호출합니다.", impersonatedUser)
 
 	identityFilePath := fmt.Sprintf("/opt/machine-id/%s-identity/identity", impersonatedUser)
 	log.Printf("[DEBUG] 사용할 인증서 파일 경로: %s", identityFilePath)
 
-	log.Printf("[DEBUG] 전역 t.Client (보증인 역할): %T, %v", t.Client, t.Client)
+	// 전역 t.Client (봇 클라이언트)가 실제로 어떤 역할을 가지고 있는지 확인합니다.
 
 	creds := client.LoadIdentityFile(identityFilePath)
 
@@ -172,6 +171,13 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 		return
 	}
 	defer impersonatedClient.Close()
+
+	impersonatedRoles, err := impersonatedClient.GetCurrentUserRoles(ctx)
+	if err != nil {
+		log.Printf("[DEBUG] 가장된 클라이언트의 역할을 확인하는 중 에러 발생: %v", err)
+	} else {
+		log.Printf("[DEBUG] 가장된 클라이언트(impersonatedClient)의 실제 역할: %v", impersonatedRoles)
+	}
 
 	users, err := impersonatedClient.GetUsers(ctx, false)
 	if err != nil {
