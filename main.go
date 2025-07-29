@@ -150,24 +150,42 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 		return
 	}
 
-	identityFilePath := fmt.Sprintf("/opt/machine-id/%s-identity/identity", impersonatedUser)
-	log.Printf("[DEBUG] 사용할 인증서 파일 경로: %s", identityFilePath)
-
-	// 전역 t.Client (봇 클라이언트)가 실제로 어떤 역할을 가지고 있는지 확인합니다.
-
-	creds := client.LoadIdentityFile(identityFilePath)
-
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
+	// 1. [핵심] 먼저 전역 클라이언트(t.Client)를 사용하여 사용자의 역할 정보를 가져옵니다.
+	user, err := t.Client.GetUser(ctx, impersonatedUser, false)
+	if err != nil {
+		log.Printf("사용자 '%s'의 정보를 가져오는 데 실패: %v", impersonatedUser, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 정보 조회에 실패했습니다."})
+		return
+	}
+	userRoles := user.GetRoles()
+	log.Printf("[DEBUG] 사용자 '%s'의 역할: %v", impersonatedUser, userRoles)
+
+	// 2. 이 예제에서는 첫 번째 역할을 사용합니다. (실제 환경에서는 더 정교한 로직이 필요할 수 있습니다.)
+	if len(userRoles) == 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "사용자에게 할당된 역할이 없습니다."})
+		return
+	}
+
+	log.Printf("[DEBUG] 사용자 '%s'가 가진 전체 역할 목록: %v", impersonatedUser, userRoles)
+	targetRole := userRoles[0]
+
+	// 3. 확인된 역할을 기반으로 사용할 인증서 파일 경로를 결정합니다.
+	identityFilePath := fmt.Sprintf("/opt/machine-id/%s-identity/identity", targetRole)
+	log.Printf("[DEBUG] 사용할 역할 기반 인증서 파일 경로: %s", identityFilePath)
+
+	creds := client.LoadIdentityFile(identityFilePath)
+
+	// 4. 해당 역할의 인증서로 임시 클라이언트를 생성합니다.
 	impersonatedClient, err := client.New(ctx, client.Config{
 		Addrs:       []string{teleportAuthAddr},
 		Credentials: []client.Credentials{creds},
-		//DialOpts: []grpc.DialOption{},
 	})
 	if err != nil {
-		log.Printf("사용자 '%s'의 클라이언트 생성 실패 (인증서 파일 확인 필요): %v", impersonatedUser, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 클라이언트 생성에 실패했습니다."})
+		log.Printf("역할('%s') 클라이언트 생성 실패 (인증서 파일 확인 필요): %v", targetRole, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 클라이언트 생성에 실패했습니다."})
 		return
 	}
 	defer impersonatedClient.Close()
@@ -179,14 +197,51 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 		log.Printf("[DEBUG] 가장된 클라이언트(impersonatedClient)의 실제 역할: %v", impersonatedRoles)
 	}
 
+	// 5. 생성된 클라이언트로 최종 API를 호출합니다. 이 요청은 'targetRole'의 권한으로 실행됩니다.
 	users, err := impersonatedClient.GetUsers(ctx, false)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다."})
+		// 이제 권한이 없으면 여기서 'access denied' 에러가 발생합니다.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다: " + err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, users)
+	/*
+		identityFilePath := fmt.Sprintf("/opt/machine-id/%s-identity/identity", impersonatedUser)
+		log.Printf("[DEBUG] 사용할 인증서 파일 경로: %s", identityFilePath)
 
+		creds := client.LoadIdentityFile(identityFilePath)
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+		defer cancel()
+
+		impersonatedClient, err := client.New(ctx, client.Config{
+			Addrs:       []string{teleportAuthAddr},
+			Credentials: []client.Credentials{creds},
+			//DialOpts: []grpc.DialOption{},
+		})
+		if err != nil {
+			log.Printf("사용자 '%s'의 클라이언트 생성 실패 (인증서 파일 확인 필요): %v", impersonatedUser, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 클라이언트 생성에 실패했습니다."})
+			return
+		}
+		defer impersonatedClient.Close()
+
+		impersonatedRoles, err := impersonatedClient.GetCurrentUserRoles(ctx)
+		if err != nil {
+			log.Printf("[DEBUG] 가장된 클라이언트의 역할을 확인하는 중 에러 발생: %v", err)
+		} else {
+			log.Printf("[DEBUG] 가장된 클라이언트(impersonatedClient)의 실제 역할: %v", impersonatedRoles)
+		}
+
+		users, err := impersonatedClient.GetUsers(ctx, false)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다."})
+			return
+		}
+
+		c.JSON(http.StatusOK, users)
+	*/
 }
 
 func (t *TeleportClientWrapper) GetRoles(c *gin.Context) {
