@@ -173,7 +173,7 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	targetRole := userRoles[0]
 
 	// 3. 확인된 역할을 기반으로 사용할 인증서 파일 경로를 결정합니다.
-	identityFilePath := fmt.Sprintf("/opt/machine-id/%s-identity/identity", targetRole)
+	identityFilePath := fmt.Sprintf("/opt/machine-id/%s/identity", targetRole)
 	log.Printf("[DEBUG] 사용할 역할 기반 인증서 파일 경로: %s", identityFilePath)
 
 	creds := client.LoadIdentityFile(identityFilePath)
