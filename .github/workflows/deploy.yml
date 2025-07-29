@@ -90,7 +90,6 @@ jobs:
               -e TELEPORT_PROXY_ADDR='${{ secrets.TELEPORT_PROXY_ADDR }}' \
               -e TELEPORT_AUTH_ADDR='${{ secrets.TELEPORT_AUTH_ADDR }}' \
               -e JWT_SECRET_KEY='${{ secrets.JWT_SECRET_KEY }}' \
-              -v /home/a01037878249/teleport-backend/tbot.yaml.template:/etc/tbot.yaml.template:ro \
               -v ~/teleport-daemon/keys/fullchain.pem:/etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem \
               -v ~/teleport-daemon/keys/privkey.pem:/etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem \
               --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
