@@ -156,7 +156,7 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	creds := client.LoadIdentityFile("/opt/machine-id/CometWoo-identity")
+	creds := client.LoadIdentityFile("/opt/machine-id/CometWoo-identity/identity")
 	userClient, err := client.New(ctx, client.Config{
 		Addrs: []string{teleportAuthAddr}, Credentials: []client.Credentials{creds}, DialOpts: []grpc.DialOption{},
 	})
