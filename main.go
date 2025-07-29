@@ -78,6 +78,7 @@ func main() {
 		log.Fatalf("Teleport API 클라이언트 생성 실패: %v", err)
 	}
 	defer mainClient.Close()
+
 	clientWrapper = &TeleportClientWrapper{Client: mainClient}
 
 	// 2. Gin 라우터 생성 및 모든 엔드포인트 등록
@@ -179,14 +180,23 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 		return
 	}
 
-	// 4. '내 얼굴(공개키)'을 Teleport에 보내 '이 얼굴이 OOO가 맞다'는 공식 인증서 발급을 요청합니다.
-	certs, err := t.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
+	// [디버그 로그 추가] 어떤 요청을 보내는지 정확히 로깅합니다.
+	certRequest := proto.UserCertsRequest{
 		TLSPublicKey: publicKeyBytes,
 		Username:     impersonatedUser,
 		Expires:      time.Now().Add(5 * time.Minute),
-	})
+	}
+	log.Printf("[DEBUG] Teleport에 인증서 발급 요청: Username=%s, Expires=%s", certRequest.Username, certRequest.Expires)
+
+	// 4. '내 얼굴(공개키)'을 Teleport에 보내 '이 얼굴이 OOO가 맞다'는 공식 인증서 발급을 요청합니다.
+	certs, err := t.Client.GenerateUserCerts(ctx, certRequest)
 	if err != nil {
-		log.Printf("사용자 '%s'의 인증서 발급 실패: %v", impersonatedUser, err)
+		// [디버그 로그 추가] Teleport로부터 받은 에러를 상세하게 출력합니다.
+		// trace.Wrap을 사용하면 더 풍부한 에러 정보를 얻을 수 있습니다.
+		wrappedErr := trace.Wrap(err)
+		log.Printf("사용자 '%s'의 인증서 발급 실패: %v", impersonatedUser, wrappedErr)
+		log.Printf("[DEBUG] Full error details from Teleport: %#v", wrappedErr)
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 가장에 실패했습니다."})
 		return
 	}
