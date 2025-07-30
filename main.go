@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
@@ -80,6 +81,33 @@ func main() {
 
 	// 2. Gin 라우터 생성 및 모든 엔드포인트 등록
 	router := gin.Default()
+	// --- 개선된 부분 (2): CORS 미들웨어 설정 및 적용 ---
+	// CORS 설정을 생성합니다.
+	config := cors.Config{
+		// AllowOrigins는 요청을 허용할 출처 목록입니다.
+		// 여기서는 프론트엔드 주소인 "https://openswdev.duckdns.org:3000"을 명시합니다.
+		AllowOrigins: []string{"https://openswdev.duckdns.org:3000"},
+
+		// AllowMethods는 허용할 HTTP 메서드 목록입니다.
+		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+
+		// AllowHeaders는 요청에서 허용할 헤더 목록입니다.
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
+
+		// ExposeHeaders는 클라이언트가 접근할 수 있는 응답 헤더 목록입니다.
+		ExposeHeaders: []string{"Content-Length"},
+
+		// AllowCredentials가 true이면, 요청에 쿠키를 포함할 수 있습니다.
+		// 프론트엔드에서 'credentials: "include"' 옵션을 사용하므로 반드시 true로 설정해야 합니다.
+		AllowCredentials: true,
+
+		// MaxAge는 pre-flight 요청 결과를 캐시할 시간(초)입니다.
+		MaxAge: 12 * time.Hour,
+	}
+
+	// 설정한 CORS 정책을 라우터의 전역 미들웨어로 적용합니다.
+	// 이 코드는 모든 라우터 그룹보다 먼저 와야 합니다.
+	router.Use(cors.New(config))
 
 	// 2-1. 기존 API 엔드포인트 (/api/v1/*)
 	apiV1 := router.Group("/api/v1")
