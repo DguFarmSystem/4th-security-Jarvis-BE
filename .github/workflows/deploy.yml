@@ -71,6 +71,9 @@ jobs:
             echo "Generating a new one-time join token for the bot..."
             BOT_JOIN_TOKEN=$(docker exec teleport-daemon tctl bots add jarvis-bot --roles=web-terminal-bot-role --ttl=5m | grep 'The bot token: ' | awk '{print $4}')
             
+            # jarvis-bot 생성 시 자동 생성되는 역할을 로컬에 있는 커스텀한 역할 파일로 덮어씌우기 (impersonate: '*')
+            docker exec teleport-daemon tctl create -f bot-jarvis-bot.yaml
+
             # 토큰이 정상적으로 추출되었는지 확인하는 방어 로직 (디버깅에 유용)
             if [ -z "$BOT_JOIN_TOKEN" ]; then
               echo "Error: Failed to generate or extract bot join token."
