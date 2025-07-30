@@ -33,6 +33,13 @@ var (
 	jwtSecretKey      []byte
 )
 
+// --- 개선된 부분 (1) ---
+// 업데이트 요청 시 받을 JSON 데이터 구조체를 정의합니다.
+// 여기서는 사용자의 역할을 변경하는 경우를 예로 듭니다.
+type UpdateUserRequest struct {
+	Roles []string `json:"roles"`
+}
+
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 type TeleportClientWrapper struct{ Client *client.Client }
@@ -79,6 +86,8 @@ func main() {
 	apiV1.Use(AuthenticateJWT())
 	{
 		apiV1.GET("/users", clientWrapper.GetUsers)
+		apiV1.DELETE("/users/:username", clientWrapper.DeleteUser)
+		apiV1.PUT("/users/:username", clientWrapper.UpdateUser)
 		apiV1.GET("/roles", clientWrapper.GetRoles)
 		apiV1.GET("/resources/nodes", clientWrapper.GetNodes)
 		apiV1.GET("/audit/events", clientWrapper.GetAuditEvents)
@@ -198,6 +207,105 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, users)
+}
+
+func (t *TeleportClientWrapper) DeleteUser(c *gin.Context) {
+
+	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	userToDelete := c.Param("username")
+	if userToDelete == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "삭제할 사용자의 이름(username)이 반드시 필요합니다."})
+		return
+	}
+
+	//자기 자신을 삭제하려는 요청을 방지합니다.
+	if userToDelete == impersonatedUser {
+		c.JSON(http.StatusForbidden, gin.H{"error": "자기 자신을 삭제할 수 없습니다."})
+		return
+	}
+	log.Printf("[DeleteUser] 요청 시작: 요청자='%s', 삭제 대상='%s'", impersonatedUser, userToDelete)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		log.Printf("[DeleteUser] 클라이언트 생성 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	// 5. 생성된 클라이언트로 최종 API를 호출합니다. 이 요청은 'targetRole'의 권한으로 실행됩니다.
+	err = impersonatedClient.DeleteUser(ctx, userToDelete)
+	if err != nil {
+		// 이제 권한이 없으면 여기서 'access denied' 에러가 발생합니다.
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("'%s' 사용자 삭제에 실패했습니다: %s", userToDelete, err.Error())})
+		return
+	}
+	log.Printf("[DeleteUser] 성공: 사용자 '%s'가 성공적으로 삭제되었습니다.", userToDelete)
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("사용자 '%s'이(가) 성공적으로 삭제되었습니다.", userToDelete)})
+
+}
+
+func (t *TeleportClientWrapper) UpdateUser(c *gin.Context) {
+	// 1. URL 파라미터에서 업데이트할 사용자 이름을 가져옵니다.
+	userToUpdate := c.Param("username")
+	if userToUpdate == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "업데이트할 사용자의 이름(username)이 반드시 필요합니다."})
+		return
+	}
+	// 2. 요청 본문(JSON)에서 업데이트할 데이터를 읽어옵니다.
+	var req UpdateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "요청 본문이 잘못되었습니다: " + err.Error()})
+		return
+	}
+
+	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+	log.Printf("[UpdateUser] 요청 시작: 요청자='%s', 대상='%s', 요청 데이터: %+v", impersonatedUser, userToUpdate, req)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	// 업데이트를 위해 먼저 기존 사용자 정보를 가져옵니다.
+	user, err := impersonatedClient.GetUser(ctx, userToUpdate, false) // `false`는 withSecrets를 비활성화
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("사용자 '%s' 정보 조회에 실패했습니다: %s", userToUpdate, err.Error())})
+		return
+	}
+	// 6. 가져온 사용자 정보에 요청받은 데이터를 적용합니다. (예: 역할 업데이트)
+	user.SetRoles(req.Roles)
+
+	// 7. 변경된 사용자 객체로 업데이트 API를 호출합니다.
+	_, err = impersonatedClient.UpdateUser(ctx, user)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("사용자 '%s' 업데이트에 실패했습니다: %s", userToUpdate, err.Error())})
+		return
+	}
+
+	// 8. 성공적으로 업데이트되었음을 응답합니다.
+	log.Printf("[UpdateUser] 성공: 사용자 '%s'의 정보가 성공적으로 업데이트되었습니다.", userToUpdate)
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("사용자 '%s'의 정보가 성공적으로 업데이트되었습니다.", userToUpdate)})
 }
 
 func (t *TeleportClientWrapper) GetRoles(c *gin.Context) {
