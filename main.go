@@ -142,6 +142,35 @@ func AuthenticateJWT() gin.HandlerFunc {
 	}
 }
 
+func (t *TeleportClientWrapper) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
+	// 1. 사용자 정보 조회
+	user, err := t.Client.GetUser(ctx, username, false)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get user info: %w", err)
+	}
+
+	userRoles := user.GetRoles()
+	if len(userRoles) == 0 {
+		return nil, "", fmt.Errorf("user '%s' has no assigned roles", username)
+	}
+
+	targetRole := userRoles[0] // 첫 번째 역할 사용 (필요 시 로직 확장 가능)
+
+	identityFilePath := fmt.Sprintf("/opt/machine-id/%s/identity", targetRole)
+
+	creds := client.LoadIdentityFile(identityFilePath)
+
+	impersonatedClient, err := client.New(ctx, client.Config{
+		Addrs:       []string{teleportAuthAddr},
+		Credentials: []client.Credentials{creds},
+	})
+	if err != nil {
+		return nil, targetRole, fmt.Errorf("failed to create impersonated client with role %s: %w", targetRole, err)
+	}
+
+	return impersonatedClient, targetRole, nil
+}
+
 func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
 	impersonatedUser := c.GetString("username")
@@ -153,49 +182,12 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	// 1. [핵심] 먼저 전역 클라이언트(t.Client)를 사용하여 사용자의 역할 정보를 가져옵니다.
-	user, err := t.Client.GetUser(ctx, impersonatedUser, false)
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
-		log.Printf("사용자 '%s'의 정보를 가져오는 데 실패: %v", impersonatedUser, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 정보 조회에 실패했습니다."})
-		return
-	}
-	userRoles := user.GetRoles()
-	log.Printf("[DEBUG] 사용자 '%s'의 역할: %v", impersonatedUser, userRoles)
-
-	// 2. 이 예제에서는 첫 번째 역할을 사용합니다. (실제 환경에서는 더 정교한 로직이 필요할 수 있습니다.)
-	if len(userRoles) == 0 {
-		c.JSON(http.StatusForbidden, gin.H{"error": "사용자에게 할당된 역할이 없습니다."})
-		return
-	}
-
-	log.Printf("[DEBUG] 사용자 '%s'가 가진 전체 역할 목록: %v", impersonatedUser, userRoles)
-	targetRole := userRoles[0]
-
-	// 3. 확인된 역할을 기반으로 사용할 인증서 파일 경로를 결정합니다.
-	identityFilePath := fmt.Sprintf("/opt/machine-id/%s/identity", targetRole)
-	log.Printf("[DEBUG] 사용할 역할 기반 인증서 파일 경로: %s", identityFilePath)
-
-	creds := client.LoadIdentityFile(identityFilePath)
-
-	// 4. 해당 역할의 인증서로 임시 클라이언트를 생성합니다.
-	impersonatedClient, err := client.New(ctx, client.Config{
-		Addrs:       []string{teleportAuthAddr},
-		Credentials: []client.Credentials{creds},
-	})
-	if err != nil {
-		log.Printf("역할('%s') 클라이언트 생성 실패 (인증서 파일 확인 필요): %v", targetRole, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 클라이언트 생성에 실패했습니다."})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	defer impersonatedClient.Close()
-
-	impersonatedRoles, err := impersonatedClient.GetCurrentUserRoles(ctx)
-	if err != nil {
-		log.Printf("[DEBUG] 가장된 클라이언트의 역할을 확인하는 중 에러 발생: %v", err)
-	} else {
-		log.Printf("[DEBUG] 가장된 클라이언트(impersonatedClient)의 실제 역할: %v", impersonatedRoles)
-	}
 
 	// 5. 생성된 클라이언트로 최종 API를 호출합니다. 이 요청은 'targetRole'의 권한으로 실행됩니다.
 	users, err := impersonatedClient.GetUsers(ctx, false)
@@ -206,47 +198,26 @@ func (t *TeleportClientWrapper) GetUsers(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, users)
-	/*
-		identityFilePath := fmt.Sprintf("/opt/machine-id/%s-identity/identity", impersonatedUser)
-		log.Printf("[DEBUG] 사용할 인증서 파일 경로: %s", identityFilePath)
-
-		creds := client.LoadIdentityFile(identityFilePath)
-
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-		defer cancel()
-
-		impersonatedClient, err := client.New(ctx, client.Config{
-			Addrs:       []string{teleportAuthAddr},
-			Credentials: []client.Credentials{creds},
-			//DialOpts: []grpc.DialOption{},
-		})
-		if err != nil {
-			log.Printf("사용자 '%s'의 클라이언트 생성 실패 (인증서 파일 확인 필요): %v", impersonatedUser, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 클라이언트 생성에 실패했습니다."})
-			return
-		}
-		defer impersonatedClient.Close()
-
-		impersonatedRoles, err := impersonatedClient.GetCurrentUserRoles(ctx)
-		if err != nil {
-			log.Printf("[DEBUG] 가장된 클라이언트의 역할을 확인하는 중 에러 발생: %v", err)
-		} else {
-			log.Printf("[DEBUG] 가장된 클라이언트(impersonatedClient)의 실제 역할: %v", impersonatedRoles)
-		}
-
-		users, err := impersonatedClient.GetUsers(ctx, false)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다."})
-			return
-		}
-
-		c.JSON(http.StatusOK, users)
-	*/
 }
 
 func (t *TeleportClientWrapper) GetRoles(c *gin.Context) {
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
 
-	roles, err := t.Client.GetRoles(c.Request.Context())
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	roles, err := impersonatedClient.GetRoles(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 목록을 가져오는 데 실패했습니다: " + err.Error()})
 		return
@@ -255,7 +226,23 @@ func (t *TeleportClientWrapper) GetRoles(c *gin.Context) {
 }
 
 func (t *TeleportClientWrapper) GetNodes(c *gin.Context) {
-	nodes, err := t.Client.GetNodes(c.Request.Context(), "")
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	nodes, err := impersonatedClient.GetNodes(ctx, "")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "서버(노드) 목록을 가져오는 데 실패했습니다: " + err.Error()})
 		return
@@ -264,7 +251,24 @@ func (t *TeleportClientWrapper) GetNodes(c *gin.Context) {
 }
 
 func (t *TeleportClientWrapper) GetAuditEvents(c *gin.Context) {
-	events, _, err := t.Client.SearchEvents(
+
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	events, _, err := impersonatedClient.SearchEvents(
 		c.Request.Context(),
 		time.Now().Add(-24*time.Hour),
 		time.Now(),
