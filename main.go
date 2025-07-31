@@ -120,6 +120,7 @@ func main() {
 		apiV1.GET("/roles", clientWrapper.GetRoles)
 		apiV1.POST("/roles", clientWrapper.CreateRole) // 새 역할 생성 (POST 메서드 사용)
 		apiV1.PUT("/roles", clientWrapper.UpsertRole)  // 역할 생성 또는 업데이트 (PUT 메서드 사용)
+		apiV1.DELETE("/roles/:rolename", clientWrapper.DeleteRole)
 		apiV1.GET("/resources/nodes", clientWrapper.GetNodes)
 		apiV1.GET("/audit/events", clientWrapper.GetAuditEvents)
 	}
@@ -440,6 +441,42 @@ func (t *TeleportClientWrapper) UpsertRole(c *gin.Context) {
 	//  (2): 성공 시 생성/수정된 객체 자체를 반환 ---
 	log.Printf("[UpsertRole] 성공: 역할 '%s'가 생성/수정되었습니다.", upsertedRole.GetName())
 	c.JSON(http.StatusOK, upsertedRole) // 단순 메시지 대신, 생성/수정된 Role 객체를 반환
+}
+
+func (t *TeleportClientWrapper) DeleteRole(c *gin.Context) {
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	roleToDelete := c.Param("rolename")
+	if roleToDelete == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "삭제할 역할의 이름(rolename)이 반드시 필요합니다."})
+		return
+	}
+
+	log.Printf("[DeleteRole] 요청 시작: 요청자='%s', 삭제 대상 역할='%s'", impersonatedUser, roleToDelete)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	err = impersonatedClient.DeleteRole(ctx, roleToDelete)
+	if err != nil {
+		log.Printf("[DeleteRole] API 호출 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("역할 '%s' 삭제에 실패했습니다: %s", roleToDelete, err.Error())})
+		return
+	}
+
+	log.Printf("[DeleteRole] 성공: 역할 '%s'가 삭제되었습니다.", roleToDelete)
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("역할 '%s'이(가) 성공적으로 삭제되었습니다.", roleToDelete)})
 }
 
 func (t *TeleportClientWrapper) GetNodes(c *gin.Context) {
