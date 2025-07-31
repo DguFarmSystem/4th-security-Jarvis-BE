@@ -34,7 +34,8 @@ var (
 	jwtSecretKey      []byte
 )
 
-// --- 개선된 부분 (1) ---
+//	(1) ---
+//
 // 업데이트 요청 시 받을 JSON 데이터 구조체를 정의합니다.
 // 여기서는 사용자의 역할을 변경하는 경우를 예로 듭니다.
 type UpdateUserRequest struct {
@@ -81,7 +82,7 @@ func main() {
 
 	// 2. Gin 라우터 생성 및 모든 엔드포인트 등록
 	router := gin.Default()
-	// --- 개선된 부분 (2): CORS 미들웨어 설정 및 적용 ---
+	//  (2): CORS 미들웨어 설정 및 적용 ---
 	// CORS 설정을 생성합니다.
 	config := cors.Config{
 		// AllowOrigins는 요청을 허용할 출처 목록입니다.
@@ -117,6 +118,8 @@ func main() {
 		apiV1.DELETE("/users/:username", clientWrapper.DeleteUser)
 		apiV1.PUT("/users/:username", clientWrapper.UpdateUser)
 		apiV1.GET("/roles", clientWrapper.GetRoles)
+		apiV1.POST("/roles", clientWrapper.CreateRole) // 새 역할 생성 (POST 메서드 사용)
+		apiV1.PUT("/roles", clientWrapper.UpsertRole)  // 역할 생성 또는 업데이트 (PUT 메서드 사용)
 		apiV1.GET("/resources/nodes", clientWrapper.GetNodes)
 		apiV1.GET("/audit/events", clientWrapper.GetAuditEvents)
 	}
@@ -359,6 +362,84 @@ func (t *TeleportClientWrapper) GetRoles(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, roles)
+}
+
+func (t *TeleportClientWrapper) CreateRole(c *gin.Context) {
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	// 1. 요청 본문(JSON)에서 역할 데이터를 읽어옵니다.
+	// types.Role은 인터페이스이므로, 구체적인 타입인 RoleV6로 바인딩합니다.
+	var role *types.RoleV6
+	if err := c.ShouldBindJSON(&role); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "요청 본문(Role)이 잘못되었습니다: " + err.Error()})
+		return
+	}
+	log.Printf("[CreateRole] 요청 시작: 요청자='%s', 생성할 역할명='%s'", impersonatedUser, role.GetName())
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	//  (1): 두 개의 값을 반환받도록 수정 ---
+	// API가 (types.Role, error)를 반환하므로, createdRole 변수에 결과를 받습니다.
+	createdRole, err := impersonatedClient.CreateRole(ctx, role)
+	if err != nil {
+		log.Printf("[CreateRole] API 호출 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("역할 '%s' 생성에 실패했습니다: %s", role.GetName(), err.Error())})
+		return
+	}
+
+	//  (2): 성공 시 생성된 객체 자체를 반환 ---
+	log.Printf("[CreateRole] 성공: 역할 '%s'가 생성되었습니다.", createdRole.GetName())
+	c.JSON(http.StatusCreated, createdRole) // 단순 메시지 대신, 생성된 Role 객체를 반환
+}
+
+func (t *TeleportClientWrapper) UpsertRole(c *gin.Context) {
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	// 1. 요청 본문(JSON)에서 역할 데이터를 읽어옵니다.
+	var role *types.RoleV6
+	if err := c.ShouldBindJSON(&role); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "요청 본문(Role)이 잘못되었습니다: " + err.Error()})
+		return
+	}
+	log.Printf("[UpsertRole] 요청 시작: 요청자='%s', 생성/수정할 역할명='%s'", impersonatedUser, role.GetName())
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	//  (1): 두 개의 값을 반환받도록 수정 ---
+	upsertedRole, err := impersonatedClient.UpsertRole(ctx, role)
+	if err != nil {
+		log.Printf("[UpsertRole] API 호출 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("역할 '%s' 생성/수정에 실패했습니다: %s", role.GetName(), err.Error())})
+		return
+	}
+
+	//  (2): 성공 시 생성/수정된 객체 자체를 반환 ---
+	log.Printf("[UpsertRole] 성공: 역할 '%s'가 생성/수정되었습니다.", upsertedRole.GetName())
+	c.JSON(http.StatusOK, upsertedRole) // 단순 메시지 대신, 생성/수정된 Role 객체를 반환
 }
 
 func (t *TeleportClientWrapper) GetNodes(c *gin.Context) {
