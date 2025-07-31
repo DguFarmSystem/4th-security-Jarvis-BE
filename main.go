@@ -496,7 +496,7 @@ func (t *TeleportClientWrapper) GetNodes(c *gin.Context) {
 	}
 	defer impersonatedClient.Close()
 
-	nodes, err := impersonatedClient.GetNodes(ctx, "")
+	nodes, err := impersonatedClient.GetNodes(ctx, "default")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "서버(노드) 목록을 가져오는 데 실패했습니다: " + err.Error()})
 		return
