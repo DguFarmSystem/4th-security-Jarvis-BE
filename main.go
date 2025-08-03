@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -39,6 +41,11 @@ var (
 // 업데이트 요청 시 받을 JSON 데이터 구조체를 정의합니다.
 // 여기서는 사용자의 역할을 변경하는 경우를 예로 듭니다.
 type UpdateUserRequest struct {
+	Roles []string `json:"roles"`
+}
+
+type GenerateTokenRequest struct {
+	TTL   string   `json:"ttl"`
 	Roles []string `json:"roles"`
 }
 
@@ -122,6 +129,7 @@ func main() {
 		apiV1.PUT("/roles", clientWrapper.UpsertRole)  // 역할 생성 또는 업데이트 (PUT 메서드 사용)
 		apiV1.DELETE("/roles/:rolename", clientWrapper.DeleteRole)
 		apiV1.GET("/resources/nodes", clientWrapper.GetNodes)
+		apiV1.POST("/resources/nodes/token", clientWrapper.GenerateNodeJoinToken)
 		apiV1.GET("/audit/events", clientWrapper.GetAuditEvents)
 	}
 
@@ -502,6 +510,105 @@ func (t *TeleportClientWrapper) GetNodes(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, nodes)
+}
+
+func (t *TeleportClientWrapper) GenerateNodeJoinToken(c *gin.Context) {
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없습니다."})
+		return
+	}
+
+	// 1. 요청 본문을 바인딩하고 유효성을 검사합니다.
+	var req GenerateTokenRequest
+	// 요청 값이 없을 경우 사용할 기본값 설정
+	defaults := GenerateTokenRequest{
+		TTL:   "15m",
+		Roles: []string{"node"},
+	}
+
+	// 요청 본문이 비어있어도 오류로 처리하지 않고 기본값을 사용합니다.
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		log.Printf("[GenerateToken] JSON 바인딩 오류: %v. 요청자: %s", err, impersonatedUser)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "요청 형식이 잘못되었습니다: " + err.Error()})
+		return
+	}
+
+	// 사용자가 값을 보내지 않은 경우 기본값으로 채웁니다.
+	if req.TTL == "" {
+		req.TTL = defaults.TTL
+	}
+	if len(req.Roles) == 0 {
+		req.Roles = defaults.Roles
+	}
+
+	ttl, err := time.ParseDuration(req.TTL)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "유효하지 않은 TTL 형식입니다. '5m', '1h'와 같이 입력하세요."})
+		return
+	}
+
+	log.Printf("[GenerateToken] 요청 시작: 요청자='%s', TTL='%s', Roles='%v'", impersonatedUser, req.TTL, req.Roles)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 권한 클라이언트 생성에 실패했습니다: " + err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	// 2. [핵심] 클라이언트 측에서 안전한 랜덤 토큰 문자열 생성
+	// 16바이트 -> 32자리 헥스(hex) 문자열
+	tokenBytes := make([]byte, 16)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "안전한 토큰 생성에 실패했습니다: " + err.Error()})
+		return
+	}
+	tokenValue := hex.EncodeToString(tokenBytes)
+	log.Printf("[GenerateToken] 새로운 토큰 값 생성 완료: %s", tokenValue)
+	// 3. [핵심] 생성한 토큰 값으로 ProvisionToken 객체 생성
+	token, err := types.NewProvisionToken(tokenValue, []types.SystemRole{types.RoleNode}, time.Now().Add(ttl))
+	if err != nil {
+		log.Printf("[GenerateToken] 랜덤 토큰 생성 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "ProvisionToken 객체 생성에 실패했습니다: " + err.Error()})
+		return
+	}
+
+	log.Printf("[GenerateToken] 서버에 토큰(%s) 등록을 시도합니다.", tokenValue)
+	// 4. [핵심] 올바른 메서드인 CreateToken을 사용하여 서버에 등록
+	err = impersonatedClient.CreateToken(ctx, token)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "조인 토큰을 서버에 등록하는 데 실패했습니다: " + err.Error()})
+		return
+	}
+	log.Printf("[GenerateToken] 토큰 등록 성공.")
+
+	// 스크립트 URL에 토큰과 역할을 쿼리 파라미터로 전달합니다.
+	scriptURL := fmt.Sprintf("https://%s/scripts/install.sh", teleportProxyAddr)
+
+	// 최종적으로 사용자가 실행할 명령어
+	oneLineInstallCommand := fmt.Sprintf(`curl "%s" | sudo bash`, scriptURL)
+
+	manualStartCommand := fmt.Sprintf("sudo teleport start --roles=node --token=%s --auth-server=%s", tokenValue, teleportAuthAddr)
+	// 5. 사용자에게 제공할 안내 정보 구성 (환경에 맞게 수정 필요)
+
+	response := gin.H{
+		"token":   tokenValue,
+		"expires": token.GetMetadata().Expires.Format(time.RFC3339),
+		"roles":   req.Roles,
+		"commands": gin.H{
+			"automatic_install": oneLineInstallCommand,
+			"manual_start":      manualStartCommand,
+		},
+		"instructions": gin.H{
+			"step1": "새 에이전트를 설치할 서버에서 'automatic_install' 명령어를 실행하여 Teleport 서비스를 설치 및 시작하세요.",
+			"step2": "또는, 수동으로 Teleport를 설치한 후 'manual_start' 명령어를 실행하여 클러스터에 노드를 등록하세요.",
+		},
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func (t *TeleportClientWrapper) GetAuditEvents(c *gin.Context) {
