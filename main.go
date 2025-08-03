@@ -753,6 +753,35 @@ func handleGitHubCallback(c *gin.Context) {
 	c.Redirect(http.StatusFound, "https://openswdev.duckdns.org:3000")
 }
 
+// 인증서 만료 에러인지 확인
+func isCertExpiredError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "certificate has expired") ||
+		strings.Contains(msg, "x509: certificate has expired") ||
+		strings.Contains(msg, "expired certificate") ||
+		strings.Contains(msg, "access denied: expired session")
+}
+
+// 클라이언트 재생성 코드
+func (t *TeleportClientWrapper) refreshClient() error {
+	// 필요시 sync.Mutex 등으로 동시성 보호
+	creds := client.LoadIdentityFile(machineIDIdentityFile)
+	newClient, err := client.New(context.Background(), client.Config{
+		Addrs: []string{teleportAuthAddr}, Credentials: []client.Credentials{creds}, DialOpts: []grpc.DialOption{},
+	})
+	if err != nil {
+		return err
+	}
+	if t.Client != nil {
+		t.Client.Close()
+	}
+	t.Client = newClient
+	return nil
+}
+
 func (t *TeleportClientWrapper) ProvisionTeleportUser(ctx context.Context, githubUsername string) error {
 	// 기본적으로 할당할 역할 목록
 	defaultRoles := []string{"basic-user"}
@@ -763,6 +792,17 @@ func (t *TeleportClientWrapper) ProvisionTeleportUser(ctx context.Context, githu
 
 	// 1. 사용자가 이미 존재하는지 확인합니다.
 	_, err := t.Client.GetUser(reqCtx, githubUsername, false)
+
+	// 인증서가 만료되었으면~ 클라이언트 재생성
+	if isCertExpiredError(err) {
+		log.Printf("[INFO] 인증서 만료 감지, 클라이언트 갱신 시도...")
+		if refreshErr := t.refreshClient(); refreshErr != nil {
+			log.Printf("[ERROR] 클라이언트 갱신 실패: %v", refreshErr)
+			return trace.Wrap(refreshErr)
+		}
+		// 갱신 후 다시 시도
+		_, err = t.Client.GetUser(reqCtx, githubUsername, false)
+	}
 
 	// 사용자가 존재하지 않는 경우 (err != nil 이고, NotFound 에러일 때)
 	// 2. 에러가 발생했을 경우에만 처리 로직을 실행합니다.
