@@ -131,6 +131,7 @@ func main() {
 		apiV1.DELETE("/roles/:rolename", clientWrapper.DeleteRole)
 		apiV1.GET("/resources/nodes", clientWrapper.GetNodes)
 		apiV1.POST("/resources/nodes/token", clientWrapper.GenerateNodeJoinToken)
+		apiV1.DELETE("/resources/nodes/:nodename", clientWrapper.DeleteNode)
 		apiV1.GET("/audit/events", clientWrapper.GetAuditEvents)
 	}
 
@@ -616,6 +617,54 @@ func (t *TeleportClientWrapper) GenerateNodeJoinToken(c *gin.Context) {
 		},
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+func (t *TeleportClientWrapper) DeleteNode(c *gin.Context) {
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	nodeNameToDelete := c.Param("nodename")
+	if nodeNameToDelete == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "삭제할 노드의 이름(nodename)이 필요합니다."})
+		return
+	}
+
+	log.Printf("[DeleteNode] 요청 시작: 요청자='%s', 대상 노드='%s'", impersonatedUser, nodeNameToDelete)
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := t.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	err = impersonatedClient.DeleteNode(ctx, "default", nodeNameToDelete)
+	if err != nil {
+		// trace.IsNotFound(err)를 사용해 노드가 이미 없는 경우를 구분할 수 있습니다.
+		if trace.IsNotFound(err) {
+			log.Printf("[DeleteNode] 삭제할 노드(%s)를 찾을 수 없음: %v", nodeNameToDelete, err)
+			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("노드 '%s'를 찾을 수 없습니다.", nodeNameToDelete)})
+			return
+		}
+
+		log.Printf("[DeleteNode] 노드(%s) 삭제 실패: %v", nodeNameToDelete, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "노드 삭제에 실패했습니다: " + err.Error()})
+		return
+	}
+	log.Printf("[DeleteNode] 성공: 노드 '%s'가 성공적으로 삭제되었습니다.", nodeNameToDelete)
+
+	// 3. [개선] 성공 시 명확한 JSON 응답을 반환합니다.
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Node deleted successfully",
+		"nodename":   nodeNameToDelete,
+		"deleted_by": impersonatedUser,
+	})
 }
 
 func (t *TeleportClientWrapper) GetAuditEvents(c *gin.Context) {
