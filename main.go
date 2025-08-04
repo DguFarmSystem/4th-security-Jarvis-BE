@@ -45,8 +45,9 @@ type UpdateUserRequest struct {
 }
 
 type GenerateTokenRequest struct {
-	TTL   string   `json:"ttl"`
-	Roles []string `json:"roles"`
+	TTL      string   `json:"ttl"`
+	Roles    []string `json:"roles"`
+	Nodename string   `json:"nodename"`
 }
 
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
@@ -541,6 +542,12 @@ func (t *TeleportClientWrapper) GenerateNodeJoinToken(c *gin.Context) {
 	if len(req.Roles) == 0 {
 		req.Roles = defaults.Roles
 	}
+	if req.Nodename == "" {
+		// nodename이 없으면 랜덤 문자열을 생성하여 충돌을 방지합니다.
+		randBytes := make([]byte, 4)
+		rand.Read(randBytes)
+		req.Nodename = "teleport-node-" + hex.EncodeToString(randBytes)
+	}
 
 	ttl, err := time.ParseDuration(req.TTL)
 	if err != nil {
@@ -548,7 +555,7 @@ func (t *TeleportClientWrapper) GenerateNodeJoinToken(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[GenerateToken] 요청 시작: 요청자='%s', TTL='%s', Roles='%v'", impersonatedUser, req.TTL, req.Roles)
+	log.Printf("[GenerateToken] 요청 시작: 요청자='%s', TTL='%s', Roles='%v', nodename='%s'", impersonatedUser, req.TTL, req.Roles, req.Nodename)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
@@ -590,9 +597,9 @@ func (t *TeleportClientWrapper) GenerateNodeJoinToken(c *gin.Context) {
 	scriptURL := fmt.Sprintf("https://%s/scripts/install.sh", teleportProxyAddr)
 
 	// 최종적으로 사용자가 실행할 명령어
-	oneLineInstallCommand := fmt.Sprintf(`curl "%s" | sudo bash`, scriptURL)
+	oneLineInstallCommand := fmt.Sprintf(`curl %s | sudo bash`, scriptURL)
 
-	manualStartCommand := fmt.Sprintf("sudo teleport start --roles=node --token=%s --auth-server=%s", tokenValue, teleportAuthAddr)
+	manualStartCommand := fmt.Sprintf("sudo teleport start --roles=node --token=%s --auth-server=%s --nodename=%s", tokenValue, teleportProxyAddr, req.Nodename)
 	// 5. 사용자에게 제공할 안내 정보 구성 (환경에 맞게 수정 필요)
 
 	response := gin.H{
