@@ -19,23 +19,12 @@ type Config struct {
 	ListenAddr        string
 }
 
-type UpdateUserRequest struct {
-	Roles []string `json:"roles"`
-}
-
-type GenerateTokenRequest struct {
-	TTL      string   `json:"ttl"`
-	Roles    []string `json:"roles"`
-	Nodename string   `json:"nodename"`
-}
-
 // LoadConfig는 환경 변수에서 설정을 읽어 Config 객체를 생성하고 반환합니다.
 func LoadConfig() *Config {
 	secretString := os.Getenv("JWT_SECRET_KEY")
 	if secretString == "" {
 		log.Fatal("치명적 오류: JWT_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
 	}
-
 	cfg := &Config{
 		TeleportProxyAddr: os.Getenv("TELEPORT_PROXY_ADDR"),
 		TeleportAuthAddr:  os.Getenv("TELEPORT_AUTH_ADDR"),

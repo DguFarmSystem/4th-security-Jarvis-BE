@@ -19,5 +19,27 @@ outputs:
       path: /opt/machine-id
     ssh_config: "on"
     allow_reissue: true
+outputs:
+  # 출력 1: 이벤트 핸들러가 Teleport에 인증할 때 사용할 ID 파일
+  - type: identity
+    # tbot을 실행하는 봇(예: jarvis-bot)은 이 역할을 가장할 권한이 있어야 합니다.
+    roles: [teleport-event-handler] 
+    destination:
+      type: directory
+      # 생성된 파일을 공유 볼륨의 특정 경로에 저장합니다.
+      path: /shared-certs/event-handler-identity
+
+  # 출력 2: Fluentd와 이벤트 핸들러 간의 mTLS 통신용 인증서
+  - type: tls_key_pair
+    # Fluentd 서버 인증서의 이름. 도커 네트워크에서 서비스 이름으로 사용됩니다.
+    common_name: fluentd-server
+    # 이 인증서가 유효한 DNS 이름 목록입니다.
+    dns_names:
+      - fluentd-server
+      - localhost
+    destination:
+      type: directory
+      # 생성된 인증서들을 공유 볼륨의 다른 경로에 저장합니다.
+      path: /shared-certs/fluentd-mtls
 proxy_server: openswdev.duckdns.org:3080
 debug: true
