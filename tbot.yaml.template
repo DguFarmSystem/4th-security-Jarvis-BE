@@ -19,5 +19,13 @@ outputs:
       path: /opt/machine-id
     ssh_config: "on"
     allow_reissue: true
+    # 출력 1: 이벤트 핸들러가 Teleport에 인증할 때 사용할 ID 파일
+  - type: identity
+    # tbot을 실행하는 봇(예: jarvis-bot)은 이 역할을 가장할 권한이 있어야 합니다.
+    roles: [teleport-event-handler] 
+    destination:
+      type: directory
+      # 생성된 파일을 공유 볼륨의 특정 경로에 저장합니다.
+      path: /shared-certs/event-handler-identity
 proxy_server: openswdev.duckdns.org:3080
 debug: true
