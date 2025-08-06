@@ -29,16 +29,16 @@ outputs:
       path: /shared-certs/event-handler-identity
 
   # 출력 2: Fluentd와 이벤트 핸들러 간의 mTLS 통신용 인증서
-  - type: tls_key_pair
+  #- type: tls_key_pair
     # Fluentd 서버 인증서의 이름. 도커 네트워크에서 서비스 이름으로 사용됩니다.
-    common_name: fluentd-server
+  #  common_name: fluentd-server
     # 이 인증서가 유효한 DNS 이름 목록입니다.
-    dns_names:
-      - fluentd-server
-      - localhost
-    destination:
-      type: directory
+  #  dns_names:
+  #    - fluentd-server
+  #    - localhost
+ #   destination:
+  #    type: directory
       # 생성된 인증서들을 공유 볼륨의 다른 경로에 저장합니다.
-      path: /shared-certs/fluentd-mtls
+  #    path: /shared-certs/fluentd-mtls
 proxy_server: openswdev.duckdns.org:3080
 debug: true
