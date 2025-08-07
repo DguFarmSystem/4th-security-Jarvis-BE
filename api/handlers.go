@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -514,6 +515,8 @@ func (h *Handlers) GetActiveSessions(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없습니다."})
 		return
 	}
+	// [디버그] 어떤 사용자로 함수가 호출되었는지 로그를 남깁니다.
+	log.Printf("[Debug] GetActiveSessions called for user: %s", impersonatedUser)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
@@ -532,6 +535,14 @@ func (h *Handlers) GetActiveSessions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "활성 세션 조회 실패: " + err.Error()})
 		return
 	}
+	// [디버그] API로부터 받은 결과가 몇 개인지 로그로 남깁니다.
+	// 만약 활성 세션이 없다면 여기서 "Found 0 active session trackers" 라고 출력됩니다.
+	log.Printf("[Debug] Found %d active session trackers.", len(trackers))
+
+	// [디버그] 최종적으로 클라이언트에게 보낼 데이터를 JSON 문자열로 변환하여 로그로 확인합니다.
+	// 이 로그를 통해 '[]'가 출력되는지, 'null'이 출력되는지 명확히 알 수 있습니다.
+	jsonData, _ := json.Marshal(trackers)
+	log.Printf("[Debug] Sending final response data: %s", string(jsonData))
 
 	// 4. 성공적으로 조회된 세션 목록을 반환합니다.
 	// trackers는 []types.SessionTracker 타입이며, gin이 자동으로 JSON 배열로 변환해줍니다.
