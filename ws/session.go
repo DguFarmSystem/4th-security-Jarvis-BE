@@ -75,8 +75,7 @@ func (s *PairSession) removeClient(conn *websocket.Conn, pairSessionID string) {
 // ListSessionsHandler는 현재 활성화된 Teleport 세션 목록을 반환합니다.
 func ListSessionsHandler(c *gin.Context) {
 	// tsh ls는 모든 활성 세션을 보여줍니다. json 포맷으로 파싱하기 쉽게 만듭니다.
-	cmd := exec.Command("sudo", "tsh", "ls", "-a", "--format=json")
-	cmd.Env = append(cmd.Env, "TELEPORT_IDENTITY_FILE=/opt/machine-id/identity")
+	cmd := exec.Command("sudo", "tsh", "ls", "-f", "json", "--proxy", "openswdev.duckdns.org:3080", "-i", "/opt/machine-id/identity")
 
 	out, err := cmd.Output()
 	if err != nil {
