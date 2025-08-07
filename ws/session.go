@@ -1,9 +1,6 @@
 package ws
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -70,30 +67,6 @@ func (s *PairSession) removeClient(conn *websocket.Conn, pairSessionID string) {
 		delete(sessions, pairSessionID)
 		sessionsMutex.Unlock()
 	}
-}
-
-// ListSessionsHandler는 현재 활성화된 Teleport 세션 목록을 반환합니다.
-func ListSessionsHandler(c *gin.Context) {
-	// tsh ls는 모든 활성 세션을 보여줍니다. json 포맷으로 파싱하기 쉽게 만듭니다.
-	cmd := exec.Command("sudo", "tsh", "ls", "-f", "json", "--proxy", "openswdev.duckdns.org:3080", "-i", "/opt/machine-id/identity")
-
-	out, err := cmd.Output()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list sessions", "details": err.Error()})
-		return
-	}
-
-	var activeSessions []interface{}
-	// Teleport는 각 세션을 개행으로 구분된 JSON 객체로 출력합니다.
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		var sessionData map[string]interface{}
-		if err := json.Unmarshal(scanner.Bytes(), &sessionData); err == nil {
-			activeSessions = append(activeSessions, sessionData)
-		}
-	}
-
-	c.JSON(http.StatusOK, activeSessions)
 }
 
 // JoinSessionHandler는 기존 Teleport 세션에 참여하는 웹소켓을 처리합니다.

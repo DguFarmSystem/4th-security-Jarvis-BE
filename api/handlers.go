@@ -505,3 +505,35 @@ func (h *Handlers) GetAuditEvents(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, events)
 }
+
+// GetActiveSessions는 활성화된 모든 세션 트래커 목록을 반환합니다.
+func (h *Handlers) GetActiveSessions(c *gin.Context) {
+	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없습니다."})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	// 2. 해당 사용자로 위장한 Teleport 클라이언트를 얻습니다.
+	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "impersonated client 생성 실패: " + err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	// 3. 위장 클라이언트를 사용해 활성 세션 트래커를 가져옵니다.
+	trackers, err := impersonatedClient.GetActiveSessionTrackers(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "활성 세션 조회 실패: " + err.Error()})
+		return
+	}
+
+	// 4. 성공적으로 조회된 세션 목록을 반환합니다.
+	// trackers는 []types.SessionTracker 타입이며, gin이 자동으로 JSON 배열로 변환해줍니다.
+	c.JSON(http.StatusOK, trackers)
+}
