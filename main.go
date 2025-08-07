@@ -67,10 +67,19 @@ func main() {
 		apiV1.DELETE("/resources/nodes/:nodename", apiHandlers.DeleteNode)
 
 		apiV1.GET("/audit/events", apiHandlers.GetAuditEvents)
+		// 현재 활성화된 모든 Teleport 세션 목록 보기
+		apiV1.GET("/sessions", ws.ListSessionsHandler)
+		// 특정 Teleport 세션을 기반으로 새로운 공유 세션(PairSession) 시작하기
+		apiV1.POST("/sessions/join", ws.JoinSessionHandler)
+
 	}
 
 	// 웹소켓 라우트
 	router.GET("/ws", authMiddleware, ws.HandleWebSocket)
+	// 기존의 SSH 연결 핸들러 (개인 세션용으로 유지 가능)
+	router.GET("/ws/ssh", authMiddleware, ws.HandleWebSocket) // 이전에 제공해주신 코드
+	//. 생성된 공유 세션에 웹소켓으로 참여(입장)하기
+	router.GET("/ws/sessions/:pairSessionID/enter", authMiddleware, ws.EnterSessionHandler)
 
 	// 6. 서버 시작
 	log.Printf("통합 백엔드 서버를 %s 포트(HTTPS)에서 시작합니다.", cfg.ListenAddr)

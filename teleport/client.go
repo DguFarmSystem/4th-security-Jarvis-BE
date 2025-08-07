@@ -44,11 +44,8 @@ func (s *Service) Close() {
 	}
 }
 
-// GetImpersonatedClient는 특정 사용자를 가장하는 클라이언트를 생성합니다.
+// GetImpersonatedClient는 미리 만들어진 역할별 인증서를 사용하여 사용자를 가장하는 클라이언트를 생성합니다.
 func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
-	// ... (기존 GetImpersonatedClient 로직과 동일, t를 s로 변경) ...
-	// 예: return t.Client.GetUser(...) -> return s.Client.GetUser(...)
-	// 아래는 완성된 코드
 	user, err := s.Client.GetUser(ctx, username, false)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to get user info: %w", err)
