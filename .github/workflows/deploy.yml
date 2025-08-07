@@ -95,6 +95,6 @@ jobs:
               -e JWT_SECRET_KEY='${{ secrets.JWT_SECRET_KEY }}' \
               -v ~/teleport-daemon/keys/fullchain.pem:/etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem \
               -v ~/teleport-daemon/keys/privkey.pem:/etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem \
-              -v tbot-certs-volume:/shared-certs \
+              -v tbot-certs-volume:/opt/machine-id \
               --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
               ${{ env.DOCKER_IMAGE_NAME }}:latest
