@@ -582,8 +582,14 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 	c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // 필요에 따라 CORS 설정
+
+	// [디버깅] SSE 연결 유지를 위한 keep-alive Ticker 설정 (15초마다 전송)
+	keepAliveTicker := time.NewTicker(15 * time.Second)
+	defer keepAliveTicker.Stop()
+
 	var lastEventTime time.Time
 	isFirstEvent := true
+	log.Printf("[디버깅] 세션 '%s'에 대한 이벤트 스트리밍 루프 시작", sessionID)
 	for {
 		select {
 		case event, ok := <-eventChan:
@@ -591,6 +597,9 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 				log.Printf("[StreamRecordedSession] 스트리밍 완료: 세션='%s'", sessionID)
 				return
 			}
+
+			// [디버깅] 수신된 모든 이벤트의 타입을 로그로 남겨 어떤 데이터가 오는지 확인합니다.
+			log.Printf("[디버깅] 이벤트 수신: Type=%T, Time=%v", event, event.GetTime())
 
 			if printEvent, isPrintEvent := event.(*events.SessionPrint); isPrintEvent {
 				var delay time.Duration
@@ -612,20 +621,34 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 					log.Printf("ERROR: SSE 이벤트 데이터 마샬링 실패: %v", err)
 					continue
 				}
+				// [디버깅] 클라이언트로 전송 직전의 데이터 페이로드를 로그로 확인합니다.
+				log.Printf("[디버깅] 전송 준비된 payload: %s", string(payload))
 
 				c.SSEvent("session_chunk", string(payload))
 				c.Writer.Flush()
+
+				// [디버깅] 데이터가 클라이언트로 Flush되었음을 명시적으로 로깅합니다.
+				log.Printf("[디버깅] session_chunk 이벤트가 클라이언트로 Flush됨")
 			}
 
 		case err := <-errChan:
+			// [디버깅] 에러 채널에서 수신된 내용을 명확히 로깅합니다. nil이라도 기록되어야 합니다.
 			if err != nil {
-				log.Printf("ERROR: 스트리밍 중 오류 발생: %v", err)
+				log.Printf("ERROR: 스트리밍 중 오류 발생 (errChan 수신): %v", err)
+			} else {
+				log.Printf("[디버깅] errChan에서 nil을 수신하여 스트리밍을 종료합니다.")
 			}
 			return
 
 		case <-ctx.Done():
-			log.Printf("[StreamRecordedSession] 클라이언트 연결 끊김: 세션='%s'", sessionID)
+			log.Printf("[StreamRecordedSession] 클라이언트 연결 끊김 (ctx.Done()): 세션='%s'", sessionID)
 			return
+
+		// [디버깅] 주기적으로 keep-alive 메시지를 보내 연결 상태를 확인하고 타임아웃을 방지합니다.
+		case <-keepAliveTicker.C:
+			log.Printf("[디버깅] Keep-alive 핑 전송")
+			c.SSEvent("keep-alive", "ping")
+			c.Writer.Flush()
 		}
 	}
 }
