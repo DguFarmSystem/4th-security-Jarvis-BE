@@ -581,7 +581,6 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
-	c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // 필요에 따라 CORS 설정
 
 	// [디버깅] SSE 연결 유지를 위한 keep-alive Ticker 설정 (15초마다 전송)
 	keepAliveTicker := time.NewTicker(15 * time.Second)
