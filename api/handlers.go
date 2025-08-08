@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -526,7 +527,7 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	defer impersonatedClient.Close()
 
 	events, _, err := impersonatedClient.SearchEvents(
-		ctx, // 타임아웃 컨텍스트 사용
+		c.Request.Context(),
 		time.Now().Add(-24*time.Hour),
 		time.Now(),
 		"",
@@ -539,6 +540,7 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "감사 로그를 가져오는 데 실패했습니다: " + err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusOK, events)
 }
 
@@ -580,42 +582,47 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 	c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // 필요에 따라 CORS 설정
-
-	// 5. 이벤트 스트리밍 루프
-	// select 문을 사용하여 여러 채널을 동시에 감시합니다.
+	var lastEventTime time.Time
+	isFirstEvent := true
 	for {
 		select {
-		// 5-1. 세션 이벤트가 도착한 경우
 		case event, ok := <-eventChan:
 			if !ok {
-				// 채널이 닫혔으면 스트리밍 종료
 				log.Printf("[StreamRecordedSession] 스트리밍 완료: 세션='%s'", sessionID)
 				return
 			}
 
-			// SessionPrint 이벤트만 필터링하여 실제 터미널 출력 데이터만 전송
 			if printEvent, isPrintEvent := event.(*events.SessionPrint); isPrintEvent {
 				var delay time.Duration
-				// 데이터를 SSE 형식에 맞게 클라이언트로 전송
-				// 참고: 실제로는 더 정교한 DTO로 변환하는 것이 좋습니다.
-				c.SSEvent("session_chunk", gin.H{
+				if isFirstEvent {
+					lastEventTime = printEvent.GetTime()
+					isFirstEvent = false
+				} else {
+					delay = printEvent.GetTime().Sub(lastEventTime)
+					lastEventTime = printEvent.GetTime()
+				}
+
+				payload, err := json.Marshal(gin.H{
 					"type":  "print",
 					"data":  string(printEvent.Data),
 					"delay": delay.Milliseconds(),
 					"time":  printEvent.Time.UTC(),
 				})
-				// 데이터를 즉시 클라이언트로 전송(flushing)
+				if err != nil {
+					log.Printf("ERROR: SSE 이벤트 데이터 마샬링 실패: %v", err)
+					continue
+				}
+
+				c.SSEvent("session_chunk", string(payload))
 				c.Writer.Flush()
 			}
 
-		// 5-2. 스트리밍 중 에러가 발생한 경우
 		case err := <-errChan:
-			log.Printf("ERROR: 스트리밍 중 오류 발생: %v", err)
-			c.SSEvent("error", gin.H{"message": err.Error()})
-			c.Writer.Flush()
+			if err != nil {
+				log.Printf("ERROR: 스트리밍 중 오류 발생: %v", err)
+			}
 			return
 
-		// 5-3. 클라이언트가 연결을 끊은 경우 (중요!)
 		case <-ctx.Done():
 			log.Printf("[StreamRecordedSession] 클라이언트 연결 끊김: 세션='%s'", sessionID)
 			return
