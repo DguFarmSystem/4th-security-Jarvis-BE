@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
-
 	"teleport-backend/config"
+	"time"
 
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/types"
