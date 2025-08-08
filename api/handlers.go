@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin" // UserCertsRequest를 위해 필요
 	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/trace"
 )
 
@@ -507,44 +507,118 @@ func (h *Handlers) GetAuditEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
-// GetActiveSessions는 활성화된 모든 세션 트래커 목록을 반환합니다.
-func (h *Handlers) GetActiveSessions(c *gin.Context) {
-	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
+func (h *Handlers) ListRecordedSessions(c *gin.Context) {
+
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	events, _, err := impersonatedClient.SearchEvents(
+		ctx, // 타임아웃 컨텍스트 사용
+		time.Now().Add(-24*time.Hour),
+		time.Now(),
+		"",
+		[]string{"session.end"}, // "session.end" 이벤트만 필터링
+		100,
+		types.EventOrderDescending,
+		"", // 페이지네이션을 사용하지 않으므로 커서는 비워둡니다.
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "감사 로그를 가져오는 데 실패했습니다: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, events)
+}
+
+// Server-Sent Events (SSE)를 사용하여 클라이언트에게 실시간으로 세션 이벤트를 전송합니다.
+func (h *Handlers) StreamRecordedSession(c *gin.Context) {
+
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없습니다."})
 		return
 	}
-	// [디버그] 어떤 사용자로 함수가 호출되었는지 로그를 남깁니다.
-	log.Printf("[Debug] GetActiveSessions called for user: %s", impersonatedUser)
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	sessionID := c.Param("sessionID")
+	if sessionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "URL 파라미터로 sessionID가 필요합니다."})
+		return
+	}
+
+	log.Printf("[StreamRecordedSession] 스트리밍 요청 시작: 요청자='%s', 대상 세션='%s'", impersonatedUser, sessionID)
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	// 2. 해당 사용자로 위장한 Teleport 클라이언트를 얻습니다.
 	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "impersonated client 생성 실패: " + err.Error()})
+		log.Printf("ERROR: 가장 클라이언트 생성 실패: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "내부 서버 오류: 클라이언트 생성 실패"})
 		return
 	}
 	defer impersonatedClient.Close()
 
-	// 3. 위장 클라이언트를 사용해 활성 세션 트래커를 가져옵니다.
-	trackers, err := impersonatedClient.GetActiveSessionTrackers(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "활성 세션 조회 실패: " + err.Error()})
-		return
+	// 3. StreamSessionEvents를 올바르게 호출하여 두 개의 채널을 받음
+	// startIndex 0은 녹화 시작부터 모든 이벤트를 가져옵니다.
+	eventChan, errChan := impersonatedClient.StreamSessionEvents(ctx, sessionID, 0)
+
+	// 4. SSE 스트리밍 설정
+	// 클라이언트가 SSE 스트림을 받을 수 있도록 헤더를 설정합니다.
+	c.Writer.Header().Set("Content-Type", "text/event-stream")
+	c.Writer.Header().Set("Cache-Control", "no-cache")
+	c.Writer.Header().Set("Connection", "keep-alive")
+	c.Writer.Header().Set("Access-Control-Allow-Origin", "*") // 필요에 따라 CORS 설정
+
+	// 5. 이벤트 스트리밍 루프
+	// select 문을 사용하여 여러 채널을 동시에 감시합니다.
+	for {
+		select {
+		// 5-1. 세션 이벤트가 도착한 경우
+		case event, ok := <-eventChan:
+			if !ok {
+				// 채널이 닫혔으면 스트리밍 종료
+				log.Printf("[StreamRecordedSession] 스트리밍 완료: 세션='%s'", sessionID)
+				return
+			}
+
+			// SessionPrint 이벤트만 필터링하여 실제 터미널 출력 데이터만 전송
+			if printEvent, isPrintEvent := event.(*events.SessionPrint); isPrintEvent {
+				var delay time.Duration
+				// 데이터를 SSE 형식에 맞게 클라이언트로 전송
+				// 참고: 실제로는 더 정교한 DTO로 변환하는 것이 좋습니다.
+				c.SSEvent("session_chunk", gin.H{
+					"type":  "print",
+					"data":  string(printEvent.Data),
+					"delay": delay.Milliseconds(),
+					"time":  printEvent.Time.UTC(),
+				})
+				// 데이터를 즉시 클라이언트로 전송(flushing)
+				c.Writer.Flush()
+			}
+
+		// 5-2. 스트리밍 중 에러가 발생한 경우
+		case err := <-errChan:
+			log.Printf("ERROR: 스트리밍 중 오류 발생: %v", err)
+			c.SSEvent("error", gin.H{"message": err.Error()})
+			c.Writer.Flush()
+			return
+
+		// 5-3. 클라이언트가 연결을 끊은 경우 (중요!)
+		case <-ctx.Done():
+			log.Printf("[StreamRecordedSession] 클라이언트 연결 끊김: 세션='%s'", sessionID)
+			return
+		}
 	}
-	// [디버그] API로부터 받은 결과가 몇 개인지 로그로 남깁니다.
-	// 만약 활성 세션이 없다면 여기서 "Found 0 active session trackers" 라고 출력됩니다.
-	log.Printf("[Debug] Found %d active session trackers.", len(trackers))
-
-	// [디버그] 최종적으로 클라이언트에게 보낼 데이터를 JSON 문자열로 변환하여 로그로 확인합니다.
-	// 이 로그를 통해 '[]'가 출력되는지, 'null'이 출력되는지 명확히 알 수 있습니다.
-	jsonData, _ := json.Marshal(trackers)
-	log.Printf("[Debug] Sending final response data: %s", string(jsonData))
-
-	// 4. 성공적으로 조회된 세션 목록을 반환합니다.
-	// trackers는 []types.SessionTracker 타입이며, gin이 자동으로 JSON 배열로 변환해줍니다.
-	c.JSON(http.StatusOK, trackers)
 }

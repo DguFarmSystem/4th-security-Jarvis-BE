@@ -4,7 +4,7 @@ go 1.23.11
 
 require (
 	github.com/gin-gonic/gin v1.10.1
-	github.com/gravitational/teleport/api v0.0.0-20250714130044-9d095aab44a8
+	github.com/gravitational/teleport/api v0.0.0-20250808130408-d050b2361452
 	google.golang.org/grpc v1.73.0
 )
 
@@ -33,7 +33,7 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.3
-	github.com/google/uuid v1.6.0
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3
 	github.com/gravitational/trace v1.5.1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1 // indirect
