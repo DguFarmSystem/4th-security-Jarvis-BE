@@ -51,20 +51,29 @@ func (e *LogExporter) Start(ctx context.Context) {
 		log.Fatalf("감사 로그 파일(%s)을 Tailing 할 수 없습니다: %v", e.cfg.AuditLogPath, err)
 	}
 
+	log.Println("[DEBUG] 감사 로그 파일 Tailing 시작. 새 로그를 기다립니다...")
+
 	for line := range t.Lines {
+		// tail로 읽어들인 모든 로그 라인을 출력합니다.
+		log.Printf("[DEBUG-TAIL] New line received: %s", line.Text)
+
 		if gjson.Get(line.Text, "event").String() == "session.end" {
+			// session.end 이벤트를 감지했음을 명확히 로그로 남깁니다.
 			sessionID := gjson.Get(line.Text, "sid").String()
+			log.Printf("[DEBUG] 'session.end' event detected. Starting goroutine... sessionID = %s ", sessionID)
 			logData := line.Text // 클로저를 위해 변수에 할당
 			go e.processSession(ctx, sessionID, logData)
 		}
 	}
+	log.Println("[DEBUG] Tailing loop finished.") // 루프가 종료되면 이 로그가 보입니다.
 }
 
 func (e *LogExporter) processSession(ctx context.Context, sessionID string, logData string) {
 	log.Printf("세션 처리 시작: %s", sessionID)
 
-	// 1. tlog를 사용하여 세션 로그(transcript) 추출
-	// tsh play 명령어는 tlog 포맷을 stdout으로 출력합니다.
+	// 실행할 tsh play 명령어 전체를 미리 출력합니다.
+	log.Printf("[DEBUG] Executing command: tsh play --proxy=%s -i %s --format=text %s", e.cfg.TeleportProxyAddr, e.cfg.TbotIdentityFile, sessionID)
+
 	cmd := exec.CommandContext(ctx, "tsh", "play",
 		"--proxy="+e.cfg.TeleportProxyAddr,
 		"-i", e.cfg.TbotIdentityFile,
@@ -83,12 +92,16 @@ func (e *LogExporter) processSession(ctx context.Context, sessionID string, logD
 	}
 	transcript := out.String()
 
+	log.Printf("[DEBUG] Transcript for session %s extracted successfully. Length: %d", sessionID, len(transcript))
+
 	// 2. Gemini 서비스로 분석 요청
 	analysis, err := e.geminiService.AnalyzeTranscript(ctx, transcript)
 	if err != nil {
 		log.Printf("세션 %s 분석 실패: %v", sessionID, err)
 		return
 	}
+
+	log.Printf("[DEBUG] Gemini analysis for session %s completed.", sessionID)
 
 	// 3. 최종 데이터 조합 및 Logstash 전송
 	enrichedLog := EnrichedLog{
