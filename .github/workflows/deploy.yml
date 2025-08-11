@@ -110,4 +110,4 @@ jobs:
               --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
               ${{ env.DOCKER_IMAGE_NAME }}:latest
               
-            rm gcp-sa-key.json
+            #rm gcp-sa-key.json
