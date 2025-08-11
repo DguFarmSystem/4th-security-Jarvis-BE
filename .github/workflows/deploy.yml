@@ -105,9 +105,7 @@ jobs:
               -v ~/teleport-daemon/keys/fullchain.pem:/etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem \
               -v ~/teleport-daemon/keys/privkey.pem:/etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem \
               -v tbot-certs-volume:/opt/machine-id \
-              # Teleport 감사 로그파일을 컨테이너 내부로 마운트
               -v /var/lib/teleport/log/events.log:/var/lib/teleport/log/events.log:ro \
-              # 위에서 생성한 GCP 서비스 계정 키 파일을 컨테이너 내부로 마운트 (읽기 전용)
               -v ~/gcp-sa-key.json:/etc/gcp/gcp-sa-key.json:ro \
               --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
               ${{ env.DOCKER_IMAGE_NAME }}:latest
