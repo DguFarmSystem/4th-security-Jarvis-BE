@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 func main() {
 	// 1. 설정 로드
 	cfg := config.LoadConfig()
-
+	ctx := context.Background()
 	// 2. Teleport 서비스 초기화
 	teleportService, err := teleport.NewService(cfg)
 	if err != nil {
