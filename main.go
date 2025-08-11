@@ -7,6 +7,7 @@ import (
 	"teleport-backend/api"
 	"teleport-backend/auth"
 	"teleport-backend/config"
+	"teleport-backend/services"
 	"teleport-backend/teleport"
 	"teleport-backend/ws"
 
@@ -24,6 +25,18 @@ func main() {
 		log.Fatalf("Teleport 서비스 초기화 실패: %v", err)
 	}
 	defer teleportService.Close()
+
+	// 1. Gemini 서비스 초기화
+	geminiService, err := services.NewGeminiService(ctx, cfg)
+	if err != nil {
+		log.Fatalf("Gemini 서비스 초기화 실패: %v", err)
+	}
+
+	// 2. 로그 익스포터 초기화
+	logExporter := teleport.NewLogExporter(cfg, geminiService)
+
+	// 3. 백그라운드에서 로그 익스포터 실행
+	go logExporter.Start(ctx)
 
 	// 3. 핸들러 및 미들웨어 초기화 (의존성 주입)
 	apiHandlers := api.NewHandlers(teleportService)
