@@ -61,7 +61,7 @@ jobs:
             fi
 
             # GitHub Secret 값을 서버에 파일로 저장합니다.
-            printf '%s' "${{ secrets.GCP_SA_KEY }}" > gcp-sa-key.json
+            printf "%s" '${{ secrets.GCP_SA_KEY }}' >> gcp-sa-key.json
 
             # 1. 이전 배포에서 생성된 봇이 있다면 삭제합니다.
             # '|| true'를 붙여, 봇이 존재하지 않아 오류가 발생하더라도 스크립트가 중단되지 않도록 합니다.
