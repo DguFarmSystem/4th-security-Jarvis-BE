@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"time"
 
 	"teleport-backend/api"
@@ -89,7 +90,21 @@ func main() {
 
 	// 6. 서버 시작
 	log.Printf("통합 백엔드 서버를 %s 포트(HTTPS)에서 시작합니다.", cfg.ListenAddr)
-	if err := router.RunTLS(cfg.ListenAddr, cfg.CertFile, cfg.KeyFile); err != nil {
+
+	server := &http.Server{
+		Addr:    cfg.ListenAddr, // 서버가 수신 대기할 주소
+		Handler: router,         // Gin 라우터 엔진을 핸들러로 사용
+
+		// 요청의 전체 내용을 읽는 데까지 허용하는 시간
+		ReadTimeout: 0,
+		// 응답을 쓰는 데 허용하는 최대 시간.
+		WriteTimeout: 5 * time.Minute,
+		// Keep-Alive 연결에서 다음 요청을 기다리는 최대 시간
+		IdleTimeout: 0,
+	}
+
+	// 직접 생성한 서버 객체로 TLS 서버를 시작합니다.
+	if err := server.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile); err != nil {
 		log.Fatalf("HTTPS 서버 실행 실패: %v", err)
 	}
 }
