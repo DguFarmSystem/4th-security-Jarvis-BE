@@ -58,11 +58,16 @@ func (e *LogExporter) Start(ctx context.Context) {
 		log.Printf("[DEBUG-TAIL] New line received: %s", line.Text)
 
 		if gjson.Get(line.Text, "event").String() == "session.end" {
-			// session.end 이벤트를 감지했음을 명확히 로그로 남깁니다.
-			sessionID := gjson.Get(line.Text, "sid").String()
-			log.Printf("[DEBUG] 'session.end' event detected. Starting goroutine... sessionID = %s ", sessionID)
-			logData := line.Text // 클로저를 위해 변수에 할당
-			go e.processSession(ctx, sessionID, logData)
+			if !gjson.Get(line.Text, "forwarded_by").Exists() {
+				sessionID := gjson.Get(line.Text, "sid").String()
+				log.Printf("[DEBUG] 'session.end' event detected. Starting goroutine... sessionID = %s ", sessionID)
+				logData := line.Text
+				go e.processSession(ctx, sessionID, logData)
+			} else {
+				// 전달된 노드 세션 이벤트는 무시합니다.
+				log.Printf("[DEBUG] Ignoring forwarded node session.end event for sid: %s", gjson.Get(line.Text, "sid").String())
+
+			}
 		}
 	}
 	log.Println("[DEBUG] Tailing loop finished.") // 루프가 종료되면 이 로그가 보입니다.
