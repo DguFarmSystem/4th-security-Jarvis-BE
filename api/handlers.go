@@ -660,10 +660,11 @@ func (h *Handlers) AnalyzeSession(c *gin.Context) {
 	}
 
 	log.Printf("Logstash로부터 세션 처리 요청 수신: %s", sessionID)
-	c.JSON(http.StatusAccepted, gin.H{"status": "request accepted, processing in background"})
 
 	// 비동기로 실제 분석 로직을 실행합니다.
-	go h.processSessionLogic(c.Request.Context(), sessionID, logData)
+	go h.processSessionLogic(context.Background(), sessionID, logData)
+
+	c.JSON(http.StatusAccepted, gin.H{"status": "request accepted, processing in background"})
 }
 
 // Server-Sent Events (SSE)를 사용하여 클라이언트에게 실시간으로 세션 이벤트를 전송합니다.
@@ -719,9 +720,6 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 				return
 			}
 
-			// [디버깅] 수신된 모든 이벤트의 타입을 로그로 남겨 어떤 데이터가 오는지 확인합니다.
-			log.Printf("[디버깅] 이벤트 수신: Type=%T, Time=%v", event, event.GetTime())
-
 			if printEvent, isPrintEvent := event.(*events.SessionPrint); isPrintEvent {
 				var delay time.Duration
 				if isFirstEvent {
@@ -742,14 +740,9 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 					log.Printf("ERROR: SSE 이벤트 데이터 마샬링 실패: %v", err)
 					continue
 				}
-				// [디버깅] 클라이언트로 전송 직전의 데이터 페이로드를 로그로 확인합니다.
-				log.Printf("[디버깅] 전송 준비된 payload: %s", string(payload))
 
 				c.SSEvent("session_chunk", string(payload))
 				c.Writer.Flush()
-
-				// [디버깅] 데이터가 클라이언트로 Flush되었음을 명시적으로 로깅합니다.
-				log.Printf("[디버깅] session_chunk 이벤트가 클라이언트로 Flush됨")
 			}
 
 		case err := <-errChan:
