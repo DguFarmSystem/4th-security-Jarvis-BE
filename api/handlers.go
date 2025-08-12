@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -8,24 +9,32 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os/exec"
 	"teleport-backend/config"
-	"teleport-backend/teleport" // teleport 패키지 임포트
+	"teleport-backend/services"
+	"teleport-backend/teleport"
 	"time"
 
 	"github.com/gin-gonic/gin" // UserCertsRequest를 위해 필요
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/trace"
+	"github.com/tidwall/gjson"
 )
 
 // Handlers는 모든 API 핸들러 메서드를 가집니다.
 type Handlers struct {
 	TeleportService *teleport.Service
+	GeminiService   services.Analyzer // GeminiService 인터페이스
+	HttpClient      *http.Client
 }
 
-// NewHandlers는 Handlers 구조체를 생성합니다.
-func NewHandlers(ts *teleport.Service) *Handlers {
-	return &Handlers{TeleportService: ts}
+func NewHandlers(ts *teleport.Service, gs services.Analyzer) *Handlers { // <--- 올바른 타입
+	return &Handlers{
+		TeleportService: ts,
+		GeminiService:   gs, // 이제 정상적으로 할당됩니다.
+		HttpClient:      &http.Client{Timeout: 60 * time.Second},
+	}
 }
 
 func (h *Handlers) GetUsers(c *gin.Context) {
@@ -542,6 +551,119 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, events)
+}
+
+func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string) {
+	log.Printf("세션 처리 시작: %s", sessionID)
+
+	// 실행할 tsh play 명령어 전체를 미리 출력합니다.
+	log.Printf("[DEBUG] Executing command: tsh play --proxy=%s -i %s --format=text %s", h.TeleportService.Cfg.TeleportProxyAddr, h.TeleportService.Cfg.TbotIdentityFile, sessionID)
+	cmd := exec.CommandContext(ctx, "tsh", "play",
+		"--proxy="+h.TeleportService.Cfg.TeleportProxyAddr,
+		"-i", h.TeleportService.Cfg.TbotIdentityFile,
+		"--format=text",
+		sessionID)
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("세션 %s의 로그 추출 실패 ('tsh play'): %v, Stderr: %s", sessionID, err, stderr.String())
+		return
+	}
+	transcript := out.String()
+
+	log.Printf("[DEBUG] Transcript for session %s extracted successfully. Length: %d", sessionID, len(transcript))
+
+	// 2. Gemini 서비스로 분석 요청
+	analysis, err := h.GeminiService.AnalyzeTranscript(ctx, transcript)
+	if err != nil {
+		log.Printf("세션 %s 분석 실패: %v", sessionID, err)
+		return
+	}
+
+	log.Printf("[DEBUG] Gemini analysis for session %s completed.", sessionID)
+
+	// 3. 최종 데이터 조합 및 Logstash 전송
+	enrichedLog := EnrichedLog{
+		SessionID:    sessionID,
+		User:         gjson.Get(logData, "user").String(),
+		ServerID:     gjson.Get(logData, "server_id").String(),
+		ServerAddr:   gjson.Get(logData, "server_addr").String(),
+		SessionStart: gjson.Get(logData, "session_start").String(),
+		SessionEnd:   gjson.Get(logData, "time").String(),
+		Transcript:   transcript,
+		Analysis:     analysis,
+	}
+
+	payload, err := json.Marshal(enrichedLog)
+	if err != nil {
+		log.Printf("세션 %s의 로그 데이터 직렬화 실패: %v", sessionID, err)
+		return
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", h.TeleportService.Cfg.LogstashURL, bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("세션 %s의 Logstash 요청 생성 실패: %v", sessionID, err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.HttpClient.Do(req)
+	if err != nil {
+		log.Printf("세션 %s의 분석 로그를 Logstash로 전송 실패: %v", sessionID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		log.Printf("세션 %s 전송 후 Logstash로부터 에러 응답 수신: %s", sessionID, resp.Status)
+	} else {
+		log.Printf("세션 %s의 분석 로그를 Logstash로 성공적으로 전송했습니다.", sessionID)
+	}
+}
+
+// Logstash로부터 session.end 이벤트를 받아 처리하는 핸들러
+func (h *Handlers) AnalyzeSession(c *gin.Context) {
+	// Logstash가 보낸 JSON을 특정 타입이 아닌 일반 맵으로 받습니다.
+	// 이렇게 하면 타입 불일치 오류를 피하고 유연하게 데이터를 받을 수 있습니다.
+	var payload map[string]interface{}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		log.Printf("[AnalyzeSession] ERROR: Invalid JSON from Logstash: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	// --- [테스트 코드 추가] ---
+	// Logstash로부터 받은 페이로드 전체를 로그로 남깁니다.
+	requestBody, _ := json.Marshal(payload)
+	log.Printf("[DEBUG-RECEIVE] Received payload from Logstash: %s", string(requestBody))
+	// ------------------------
+
+	// Logstash filter에서 추가한 'log_data_raw' 필드를 추출합니다.
+	logData, logOK := payload["log_data_raw"].(string)
+	if !logOK {
+		log.Printf("[AnalyzeSession] ERROR: 'log_data_raw' field is missing or not a string")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'log_data_raw' field missing"})
+		return
+	}
+
+	// 원본 로그에서 세션 ID를 추출합니다.
+	sessionID := gjson.Get(logData, "sid").String()
+	if sessionID == "" {
+		log.Printf("[AnalyzeSession] ERROR: 'sid' field missing in raw log data")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'sid' field missing"})
+		return
+	}
+
+	log.Printf("Logstash로부터 세션 처리 요청 수신: %s", sessionID)
+	c.JSON(http.StatusAccepted, gin.H{"status": "request accepted, processing in background"})
+
+	// 비동기로 실제 분석 로직을 실행합니다.
+	go h.processSessionLogic(c.Request.Context(), sessionID, logData)
 }
 
 // Server-Sent Events (SSE)를 사용하여 클라이언트에게 실시간으로 세션 이벤트를 전송합니다.

@@ -33,14 +33,8 @@ func main() {
 		log.Fatalf("Gemini 서비스 초기화 실패: %v", err)
 	}
 
-	// 2. 로그 익스포터 초기화
-	logExporter := teleport.NewLogExporter(cfg, geminiService)
-
-	// 3. 백그라운드에서 로그 익스포터 실행
-	go logExporter.Start(ctx)
-
 	// 3. 핸들러 및 미들웨어 초기화 (의존성 주입)
-	apiHandlers := api.NewHandlers(teleportService)
+	apiHandlers := api.NewHandlers(teleportService, geminiService)
 	authMiddleware := api.NewAuthMiddleware(cfg)
 	authHandler := auth.NewHandler(cfg, teleportService)
 
@@ -62,6 +56,11 @@ func main() {
 	// GitHub SSO 라우트
 	router.GET("/login", authHandler.HandleGitHubLogin)
 	router.GET("/callback", authHandler.HandleGitHubCallback)
+
+	internalAPI := router.Group("/internal")
+	{
+		internalAPI.POST("/analyze-session", apiHandlers.AnalyzeSession)
+	}
 
 	// API v1 라우트 (JWT 인증 필요)
 	apiV1 := router.Group("/api/v1")

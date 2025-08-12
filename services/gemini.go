@@ -14,7 +14,7 @@ import (
 )
 
 // Gemini API 응답을 위한 구조체
-type AIAnalysis struct {
+type Analysis struct {
 	IsAnomaly bool   `json:"is_anomaly"`
 	Reason    string `json:"reason"`
 	Summary   string `json:"summary"`
@@ -23,6 +23,10 @@ type AIAnalysis struct {
 type GeminiService struct {
 	client *genai.Client
 	model  string
+}
+
+type Analyzer interface {
+	AnalyzeTranscript(ctx context.Context, transcript string) (*Analysis, error)
 }
 
 func NewGeminiService(ctx context.Context, cfg *config.Config) (*GeminiService, error) {
@@ -35,7 +39,7 @@ func NewGeminiService(ctx context.Context, cfg *config.Config) (*GeminiService, 
 }
 
 // 세션 내용을 받아 Gemini API로 분석 요청
-func (s *GeminiService) AnalyzeTranscript(ctx context.Context, transcript string) (*AIAnalysis, error) {
+func (s *GeminiService) AnalyzeTranscript(ctx context.Context, transcript string) (*Analysis, error) {
 	model := s.client.GenerativeModel(s.model)
 	prompt := genai.Text(buildPrompt(transcript))
 
@@ -66,8 +70,8 @@ Transcript:
 `, transcript)
 }
 
-func parseGeminiResponse(resp *genai.GenerateContentResponse) (*AIAnalysis, error) {
-	var analysis AIAnalysis
+func parseGeminiResponse(resp *genai.GenerateContentResponse) (*Analysis, error) {
+	var analysis Analysis
 	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
 		// 응답에서 JSON 문자열만 깔끔하게 추출
 		rawJSON := string(resp.Candidates[0].Content.Parts[0].(genai.Text))
