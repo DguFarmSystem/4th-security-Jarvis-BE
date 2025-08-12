@@ -57,11 +57,6 @@ func main() {
 	router.GET("/login", authHandler.HandleGitHubLogin)
 	router.GET("/callback", authHandler.HandleGitHubCallback)
 
-	internalAPI := router.Group("/internal")
-	{
-		internalAPI.POST("/analyze-session", apiHandlers.AnalyzeSession)
-	}
-
 	// API v1 라우트 (JWT 인증 필요)
 	apiV1 := router.Group("/api/v1")
 	apiV1.Use(authMiddleware)
@@ -82,6 +77,7 @@ func main() {
 		apiV1.GET("/audit/events", apiHandlers.GetAuditEvents)
 		apiV1.GET("/audit/session", apiHandlers.ListRecordedSessions)
 		apiV1.GET("/audit/session/:sessionID", apiHandlers.StreamRecordedSession)
+		apiV1.POST("/analyze-session", apiHandlers.AnalyzeSession)
 	}
 
 	// 웹소켓 라우트
