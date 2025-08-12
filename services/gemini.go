@@ -40,15 +40,36 @@ func NewGeminiService(ctx context.Context, cfg *config.Config) (*GeminiService, 
 
 // 세션 내용을 받아 Gemini API로 분석 요청
 func (s *GeminiService) AnalyzeTranscript(ctx context.Context, transcript string) (*Analysis, error) {
+	log.Printf("[DEBUG] AnalyzeTranscript 시작. 수신된 Transcript 길이: %d", len(transcript))
+	if len(transcript) == 0 {
+		log.Println("[WARN] Transcript 내용이 비어있어 분석을 건너뜁니다.")
+		return &Analysis{Summary: "입력된 명령어가 없습니다."}, nil // 비어있는 경우 에러 대신 기본값 반환
+	}
+	log.Printf("[DEBUG] Gemini 사용 모델: %s", s.model)
 	model := s.client.GenerativeModel(s.model)
-	prompt := genai.Text(buildPrompt(transcript))
+	// 3. API에 전달될 최종 프롬프트 확인
+	finalPrompt := buildPrompt(transcript)
+	// 프롬프트가 너무 길 경우, 일부만 로깅하여 로그가 과도하게 길어지는 것을 방지
+	log.Printf("[DEBUG] 생성된 최종 프롬프트 (최대 200자): %.200s...", finalPrompt)
+	prompt := genai.Text(finalPrompt)
 
+	log.Println("[DEBUG] Gemini API로 GenerateContent 요청을 전송합니다...")
 	resp, err := model.GenerateContent(ctx, prompt)
 	if err != nil {
+		log.Printf("[ERROR] Gemini API 호출에서 에러 발생: %v", err)
 		return nil, fmt.Errorf("Gemini 콘텐츠 생성 실패: %w", err)
 	}
 
-	return parseGeminiResponse(resp)
+	// 6. 응답 파싱 및 최종 결과 로깅
+	analysis, err := parseGeminiResponse(resp)
+	if err != nil {
+		log.Printf("[ERROR] Gemini 응답 파싱 중 에러 발생: %v", err)
+		return nil, err // 파싱 에러는 그대로 반환
+	}
+
+	// %+v 포맷으로 구조체의 필드와 값을 함께 출력
+	log.Printf("[DEBUG] 분석 완료. 최종 결과: %+v", analysis)
+	return analysis, nil
 }
 
 func buildPrompt(transcript string) string {
