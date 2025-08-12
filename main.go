@@ -77,7 +77,11 @@ func main() {
 		apiV1.GET("/audit/events", apiHandlers.GetAuditEvents)
 		apiV1.GET("/audit/session", apiHandlers.ListRecordedSessions)
 		apiV1.GET("/audit/session/:sessionID", apiHandlers.StreamRecordedSession)
-		apiV1.POST("/analyze-session", apiHandlers.AnalyzeSession)
+	}
+	internalAPI := router.Group("/internal")
+	{
+		// 인증 미들웨어를 적용하지 않습니다.
+		internalAPI.POST("/analyze-session", apiHandlers.AnalyzeSession)
 	}
 
 	// 웹소켓 라우트
