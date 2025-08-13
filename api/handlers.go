@@ -556,7 +556,7 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string) {
 	log.Printf("세션 처리 시작: %s", sessionID)
 	// Race Conditionq, 서버 저장 중 요청 방지
-	time.Sleep(10 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	// 실행할 tsh play 명령어 전체를 미리 출력합니다.
 	log.Printf("[DEBUG] Executing command: tsh play --proxy=%s -i %s --format=text %s", h.TeleportService.Cfg.TeleportProxyAddr, h.TeleportService.Cfg.TbotIdentityFile, sessionID)

@@ -104,8 +104,8 @@ func parseGeminiResponse(resp *genai.GenerateContentResponse) (*Analysis, error)
 			rawJSON = strings.TrimSuffix(rawJSON, "```")
 		}
 		rawJSON = strings.TrimSpace(rawJSON)
-
-		if err := json.Unmarshal([]byte(rawJSON), &analysis); err != nil {
+		sanitizedJSON := strings.ReplaceAll(rawJSON, "\b", "")
+		if err := json.Unmarshal([]byte(sanitizedJSON), &analysis); err != nil {
 			log.Printf("Gemini 응답 JSON 파싱 실패: %v, 원본 응답: %s", err, rawJSON)
 			return nil, fmt.Errorf("Gemini 응답 JSON 파싱 실패: %w", err)
 		}
