@@ -593,7 +593,7 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 	enrichedLog := EnrichedLog{
 		SessionID:    sessionID,
 		User:         gjson.Get(logData, "user").String(),
-		realUser:     username,
+		SSO_User:     username,
 		ServerID:     gjson.Get(logData, "server_id").String(),
 		ServerAddr:   gjson.Get(logData, "server_addr").String(),
 		SessionStart: gjson.Get(logData, "session_start").String(),
