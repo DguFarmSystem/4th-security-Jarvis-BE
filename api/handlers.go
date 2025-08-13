@@ -578,7 +578,7 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 	}
 	transcript := out.String()
 
-	log.Printf("[DEBUG] Transcript for session %s extracted successfully. Length: %d", sessionID, len(transcript))
+	log.Printf("[DEBUG] Transcript for session %s extracted successfully. \n Sending script: %s \n", sessionID, transcript)
 
 	// 2. Gemini 서비스로 분석 요청
 	analysis, err := h.GeminiService.AnalyzeTranscript(ctx, transcript)

@@ -34,6 +34,7 @@ func NewGeminiService(ctx context.Context, cfg *config.Config) (*GeminiService, 
 	if err != nil {
 		return nil, fmt.Errorf("Gemini 클라이언트 생성 실패: %w", err)
 	}
+
 	log.Println("Gemini 서비스가 성공적으로 초기화되었습니다.")
 	return &GeminiService{client: client, model: cfg.GeminiModel}, nil
 }
@@ -53,10 +54,11 @@ func (s *GeminiService) AnalyzeTranscript(ctx context.Context, transcript string
 	log.Printf("[DEBUG] 생성된 최종 프롬프트 (최대 200자): %.200s...", finalPrompt)
 	prompt := genai.Text(finalPrompt)
 
+	cs := model.StartChat()
+
 	log.Println("[DEBUG] Gemini API로 GenerateContent 요청을 전송합니다...")
-	resp, err := model.GenerateContent(ctx, prompt)
+	resp, err := cs.SendMessage(ctx, prompt)
 	if err != nil {
-		log.Printf("[ERROR] Gemini API 호출에서 에러 발생: %v", err)
 		return nil, fmt.Errorf("Gemini 콘텐츠 생성 실패: %w", err)
 	}
 

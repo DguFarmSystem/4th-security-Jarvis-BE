@@ -81,7 +81,6 @@ func main() {
 	}
 	internalAPI := router.Group("/internal")
 	{
-		// 인증 미들웨어를 적용하지 않습니다.
 		internalAPI.POST("/analyze-session", apiHandlers.AnalyzeSession)
 	}
 
