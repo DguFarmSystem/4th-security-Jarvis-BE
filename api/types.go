@@ -31,8 +31,9 @@ type PaginatedSessionResponse struct {
 }
 
 type EnrichedLog struct {
-	SessionID    string             `json:"session_id"`
-	User         string             `json:"teleport_user"`
+	SessionID    string `json:"session_id"`
+	User         string `json:"teleport_user"`
+	realUser     string
 	ServerID     string             `json:"server_id"`
 	ServerAddr   string             `json:"server_addr"`
 	SessionStart string             `json:"session_start"`

@@ -553,7 +553,7 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
-func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string) {
+func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string, username string) {
 	log.Printf("세션 처리 시작: %s", sessionID)
 	// Race Conditionq, 서버 저장 중 요청 방지
 	time.Sleep(15 * time.Second)
@@ -593,6 +593,7 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 	enrichedLog := EnrichedLog{
 		SessionID:    sessionID,
 		User:         gjson.Get(logData, "user").String(),
+		realUser:     username,
 		ServerID:     gjson.Get(logData, "server_id").String(),
 		ServerAddr:   gjson.Get(logData, "server_addr").String(),
 		SessionStart: gjson.Get(logData, "session_start").String(),
@@ -664,7 +665,7 @@ func (h *Handlers) AnalyzeSession(c *gin.Context) {
 	log.Printf("Logstash로부터 세션 처리 요청 수신: %s", sessionID)
 
 	// 비동기로 실제 분석 로직을 실행합니다.
-	go h.processSessionLogic(context.Background(), sessionID, logData)
+	go h.processSessionLogic(context.Background(), sessionID, logData, c.GetString("username"))
 
 	c.JSON(http.StatusAccepted, gin.H{"status": "request accepted, processing in background"})
 }
