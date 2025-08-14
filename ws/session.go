@@ -32,6 +32,7 @@ func HandleWebSocket(c *gin.Context) {
 		"-i", "/opt/machine-id/identity",
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 		"--",
+		"echo",
 		githubUser,
 	)
 
