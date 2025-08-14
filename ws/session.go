@@ -31,9 +31,9 @@ func HandleWebSocket(c *gin.Context) {
 		"--proxy", "openswdev.duckdns.org:3080",
 		"-i", "/opt/machine-id/identity",
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
-		"--",
-		"echo",
-		githubUser,
+		"--",         // 이후 인수를 원격 초기 명령으로 실행
+		"bash", "-c", // bash -c로 커맨드를 실행하도록
+		fmt.Sprintf("echo %s; exec bash", githubUser),
 	)
 
 	stdout, err := sshCmd.StdoutPipe()
