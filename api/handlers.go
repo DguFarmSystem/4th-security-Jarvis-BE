@@ -553,7 +553,7 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
-func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string, username string) {
+func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string) {
 	log.Printf("세션 처리 시작: %s", sessionID)
 	// Race Conditionq, 서버 저장 중 요청 방지
 	time.Sleep(15 * time.Second)
@@ -593,7 +593,6 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 	enrichedLog := EnrichedLog{
 		SessionID:    sessionID,
 		User:         gjson.Get(logData, "user").String(),
-		SSO_User:     username,
 		ServerID:     gjson.Get(logData, "server_id").String(),
 		ServerAddr:   gjson.Get(logData, "server_addr").String(),
 		SessionStart: gjson.Get(logData, "session_start").String(),
@@ -640,19 +639,12 @@ func (h *Handlers) AnalyzeSession(c *gin.Context) {
 		return
 	}
 
-	// --- [테스트 코드 추가] ---
 	// Logstash로부터 받은 페이로드 전체를 로그로 남깁니다.
 	requestBody, _ := json.Marshal(payload)
 	log.Printf("[DEBUG-RECEIVE] Received payload from Logstash: %s", string(requestBody))
-	// ------------------------
 
-	// Logstash filter에서 추가한 'log_data_raw' 필드를 추출합니다.
-	logData, logOK := payload["log_data_raw"].(string)
-	if !logOK {
-		log.Printf("[AnalyzeSession] ERROR: 'log_data_raw' field is missing or not a string")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "'log_data_raw' field missing"})
-		return
-	}
+	// `requestBody`는 이미 []byte 타입이므로, 바로 사용합니다.
+	logData := string(requestBody)
 
 	// 원본 로그에서 세션 ID를 추출합니다.
 	sessionID := gjson.Get(logData, "sid").String()
@@ -665,7 +657,7 @@ func (h *Handlers) AnalyzeSession(c *gin.Context) {
 	log.Printf("Logstash로부터 세션 처리 요청 수신: %s", sessionID)
 
 	// 비동기로 실제 분석 로직을 실행합니다.
-	go h.processSessionLogic(context.Background(), sessionID, logData, c.GetString("username"))
+	go h.processSessionLogic(context.Background(), sessionID, logData)
 
 	c.JSON(http.StatusAccepted, gin.H{"status": "request accepted, processing in background"})
 }
