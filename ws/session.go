@@ -31,6 +31,8 @@ func HandleWebSocket(c *gin.Context) {
 		"--proxy", "openswdev.duckdns.org:3080",
 		"-i", "/opt/machine-id/identity",
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
+		"--",
+		githubUser,
 	)
 
 	stdout, err := sshCmd.StdoutPipe()
