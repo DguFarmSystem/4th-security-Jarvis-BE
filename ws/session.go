@@ -28,12 +28,12 @@ func HandleWebSocket(c *gin.Context) {
 	log.Printf("사용자 '%s'를 위해 SSH 세션 준비 중... (대상: %s@%s)", githubUser, loginUser, nodeHost)
 
 	sshCmd := exec.Command("sudo", "tsh", "ssh",
+		"-tt",
 		"--proxy", "openswdev.duckdns.org:3080",
 		"-i", "/opt/machine-id/identity",
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
-		"--",         // 이후 인수를 원격 초기 명령으로 실행
-		"bash", "-c", // bash -c로 커맨드를 실행하도록
-		fmt.Sprintf("echo %s; exec bash", githubUser),
+		"--",
+		"echo", githubUser,
 	)
 
 	stdout, err := sshCmd.StdoutPipe()
