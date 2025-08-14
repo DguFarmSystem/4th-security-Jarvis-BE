@@ -30,6 +30,7 @@ func HandleWebSocket(c *gin.Context) {
 	sshCmd := exec.Command("sudo", "tsh", "ssh",
 		"--proxy", "openswdev.duckdns.org:3080",
 		"-i", "/opt/machine-id/identity",
+		"--user", githubUser,
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 	)
 
