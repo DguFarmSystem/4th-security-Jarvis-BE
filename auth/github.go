@@ -99,5 +99,6 @@ func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 	}
 
 	c.SetCookie("auth_token", tokenString, 3600, "/", "", false, false)
-	c.Redirect(http.StatusFound, "https://openswdev.duckdns.org:3000")
+	c.Redirect(http.StatusFound, "https://jarvis-indol-omega.vercel.app")
+	//c.Redirect(http.StatusFound, "https://openswdev.duckdns.org:3000")
 }
