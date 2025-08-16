@@ -22,7 +22,7 @@ import (
 
 // --- Teleport 서비스 ---
 
-const machineIDIdentityFile = "/var/lib/teleport/bot/identity" // tbot이 생성한 ID 파일의 일반적인 경로
+
 
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
@@ -41,7 +41,7 @@ type CertificateConfig struct {
 // tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
 func NewService(cfg *config.Config) (*Service, error) {
 	log.Println("tbot ID 파일을 사용하여 Teleport 클라이언트 생성 시도...")
-	creds := client.LoadIdentityFile(machineIDIdentityFile)
+	creds := client.LoadIdentityFile(cfg.TbotIdentityFile)
 
 	mainClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{cfg.TeleportAuthAddr},
