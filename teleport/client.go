@@ -9,35 +9,16 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
+
+	"teleport-backend/config"
 
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/trace"
 	"golang.org/x/crypto/ssh"
 )
-
-// --- 설정 (Configuration) ---
-// 실제 애플리케이션에서는 이 부분을 별도의 config 파일이나 환경 변수에서 로드해야 합니다.
-type Config struct {
-	TeleportAuthAddr string
-}
-
-func loadConfig() *Config {
-	// 환경 변수나 설정 파일에서 값을 읽어옵니다.
-	// 예시를 위해 하드코딩된 값을 사용합니다.
-	// 실제 운영 시에는 이 부분을 반드시 수정해야 합니다.
-	authAddr := os.Getenv("TELEPORT_AUTH_ADDR")
-	if authAddr == "" {
-		authAddr = "127.0.0.1:3025" // 로컬 테스트용 주소
-		log.Printf("[WARN] TELEPORT_AUTH_ADDR 환경 변수가 설정되지 않았습니다. 기본값 '%s'를 사용합니다.", authAddr)
-	}
-	return &Config{
-		TeleportAuthAddr: authAddr,
-	}
-}
 
 // --- Teleport 서비스 ---
 
@@ -46,7 +27,7 @@ const machineIDIdentityFile = "/var/lib/teleport/bot/identity" // tbot이 생성
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
 	Client *client.Client
-	Cfg    *Config
+	Cfg    *config.Config
 }
 
 // CertificateConfig는 인증서 생성 시 사용할 설정입니다.
@@ -58,7 +39,7 @@ type CertificateConfig struct {
 
 // NewService는 새로운 Teleport 서비스를 생성합니다.
 // tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
-func NewService(cfg *Config) (*Service, error) {
+func NewService(cfg *config.Config) (*Service, error) {
 	log.Println("tbot ID 파일을 사용하여 Teleport 클라이언트 생성 시도...")
 	creds := client.LoadIdentityFile(machineIDIdentityFile)
 
