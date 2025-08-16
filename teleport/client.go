@@ -2,37 +2,82 @@ package teleport
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"log"
+	"os"
 	"strings"
-	"teleport-backend/config"
 	"time"
 
 	"github.com/gravitational/teleport/api/client"
-	"github.com/gravitational/teleport/api/types"
+	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/trace"
-	"google.golang.org/grpc"
+	"golang.org/x/crypto/ssh"
 )
 
-const machineIDIdentityFile = "/opt/machine-id/identity"
+// --- 설정 (Configuration) ---
+// 실제 애플리케이션에서는 이 부분을 별도의 config 파일이나 환경 변수에서 로드해야 합니다.
+type Config struct {
+	TeleportAuthAddr string
+}
+
+func loadConfig() *Config {
+	// 환경 변수나 설정 파일에서 값을 읽어옵니다.
+	// 예시를 위해 하드코딩된 값을 사용합니다.
+	// 실제 운영 시에는 이 부분을 반드시 수정해야 합니다.
+	authAddr := os.Getenv("TELEPORT_AUTH_ADDR")
+	if authAddr == "" {
+		authAddr = "127.0.0.1:3025" // 로컬 테스트용 주소
+		log.Printf("[WARN] TELEPORT_AUTH_ADDR 환경 변수가 설정되지 않았습니다. 기본값 '%s'를 사용합니다.", authAddr)
+	}
+	return &Config{
+		TeleportAuthAddr: authAddr,
+	}
+}
+
+// --- Teleport 서비스 ---
+
+const machineIDIdentityFile = "/var/lib/teleport/bot/identity" // tbot이 생성한 ID 파일의 일반적인 경로
 
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
 	Client *client.Client
-	Cfg    *config.Config
+	Cfg    *Config
+}
+
+// CertificateConfig는 인증서 생성 시 사용할 설정입니다.
+type CertificateConfig struct {
+	TTL           time.Duration
+	AccessLevel   string
+	AllowedLogins []string
 }
 
 // NewService는 새로운 Teleport 서비스를 생성합니다.
-func NewService(cfg *config.Config) (*Service, error) {
+// tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
+func NewService(cfg *Config) (*Service, error) {
+	log.Println("tbot ID 파일을 사용하여 Teleport 클라이언트 생성 시도...")
 	creds := client.LoadIdentityFile(machineIDIdentityFile)
+
 	mainClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},
-		DialOpts:    []grpc.DialOption{},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Teleport API 클라이언트 생성 실패: %w", err)
 	}
+
+	// 연결 상태 확인
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := mainClient.Ping(ctx); err != nil {
+		mainClient.Close()
+		return nil, fmt.Errorf("Teleport 클러스터(%s) 연결 실패: %w", cfg.TeleportAuthAddr, err)
+	}
+	log.Printf("Teleport 클러스터(%s)에 성공적으로 연결되었습니다.", cfg.TeleportAuthAddr)
 
 	return &Service{Client: mainClient, Cfg: cfg}, nil
 }
@@ -43,98 +88,144 @@ func (s *Service) Close() {
 	}
 }
 
-// GetImpersonatedClient는 미리 만들어진 역할별 인증서를 사용하여 사용자를 가장하는 클라이언트를 생성합니다.
-func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
+// GetDynamicImpersonatedClient는 사용자의 역할을 동적으로 읽어와서
+// 해당 역할에 맞는 단기 인증서를 발급받아 클라이언트를 생성합니다.
+func (s *Service) GetDynamicImpersonatedClient(ctx context.Context, username string) (*client.Client, *CertificateConfig, error) {
+	// 1. 사용자 정보를 동적으로 조회
 	user, err := s.Client.GetUser(ctx, username, false)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get user info: %w", err)
+		if trace.IsNotFound(err) {
+			return nil, nil, fmt.Errorf("사용자 '%s'를 찾을 수 없습니다", username)
+		}
+		return nil, nil, fmt.Errorf("사용자 정보 조회 실패: %w", err)
 	}
 
+	// 2. 사용자의 현재 역할 가져오기
 	userRoles := user.GetRoles()
 	if len(userRoles) == 0 {
-		return nil, "", fmt.Errorf("user '%s' has no assigned roles", username)
+		return nil, nil, fmt.Errorf("사용자 '%s'에게 할당된 역할이 없습니다", username)
+	}
+	log.Printf("사용자 '%s'의 역할: %v", username, userRoles)
+
+	// 3. 역할 기반으로 인증서 설정 결정 (요구사항의 핵심)
+	certConfig := s.analyzeRolesAndGetCertConfig(userRoles)
+	log.Printf("역할 분석 결과 -> AccessLevel: %s, TTL: %v", certConfig.AccessLevel, certConfig.TTL)
+
+	// 4. 인증서 발급에 필요한 키 페어 생성
+	sshPublicKey, _, err := generateSSHKeyPair() // sshPrivateKey는 사용되지 않으므로 무시
+	if err != nil {
+		return nil, nil, fmt.Errorf("SSH 키 페어 생성 실패: %w", err)
+	}
+	tlsPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, fmt.Errorf("TLS 키 페어 생성 실패: %w", err)
+	}
+	tlsPublicKeyDER, _ := x509.MarshalPKIXPublicKey(&tlsPrivateKey.PublicKey)
+
+	// 5. 단기 인증서 요청 생성
+	certsReq := proto.UserCertsRequest{
+		SSHPublicKey:   sshPublicKey,
+		TLSPublicKey:   tlsPublicKeyDER,
+		Username:       username,
+		Expires:        time.Now().Add(certConfig.TTL),
+		RouteToCluster: s.getClusterName(ctx),
+		RoleRequests:   userRoles, // 사용자의 모든 역할을 그대로 요청
+		Usage:          proto.UserCertsRequest_All,
+		// 허용된 로그인 목록을 명시적으로 설정
+
 	}
 
-	targetRole := userRoles[0]
-	identityFilePath := fmt.Sprintf("/opt/machine-id/%s/identity", targetRole)
-	creds := client.LoadIdentityFile(identityFilePath)
+	// 6. 단기 인증서 생성 요청
+	certs, err := s.Client.GenerateUserCerts(ctx, certsReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("사용자 '%s'의 단기 인증서 생성 실패: %w", username, err)
+	}
 
+	// 7. 받은 인증서로 새로운 클라이언트 생성
+	impersonatedClient, err := createClientFromCerts(ctx, s.Cfg.TeleportAuthAddr, certs, tlsPrivateKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("인증서를 사용한 클라이언트 생성 실패: %w", err)
+	}
+
+	log.Printf("사용자 '%s'를 위한 동적 클라이언트 생성 성공 (역할: %v, 레벨: %s, TTL: %v)",
+		username, userRoles, certConfig.AccessLevel, certConfig.TTL)
+
+	return impersonatedClient, certConfig, nil
+}
+
+// analyzeRolesAndGetCertConfig는 역할 목록을 분석하여 인증서 설정을 결정합니다.
+// "A(admin)로 요청하면 admin 권한, B(user)로 요청하면 일반 user 권한" 요구사항을 처리하는 핵심 함수입니다.
+func (s *Service) analyzeRolesAndGetCertConfig(roleNames []string) *CertificateConfig {
+	// 기본값: 가장 낮은 권한
+	config := &CertificateConfig{
+		TTL:           5 * time.Minute, // 일반 사용자는 5분
+		AccessLevel:   "user",
+		AllowedLogins: []string{"root", "ubuntu"}, // 기본적으로 허용할 로그인 계정
+	}
+
+	// 역할 이름에 'admin'이 포함되어 있으면 높은 권한 부여
+	for _, roleName := range roleNames {
+		if strings.Contains(strings.ToLower(roleName), "admin") {
+			config.TTL = 60 * time.Minute // 관리자는 1시간
+			config.AccessLevel = "admin"
+			config.AllowedLogins = append(config.AllowedLogins, "administrator") // admin 전용 로그인 추가
+			log.Printf("'%s' 역할 감지: 관리자(admin) 권한으로 설정합니다.", roleName)
+			return config // admin 권한이 발견되면 즉시 반환
+		}
+	}
+
+	log.Println("관리자 역할이 없습니다. 일반 사용자(user) 권한으로 설정합니다.")
+	return config
+}
+
+// --- 유틸리티 함수 ---
+
+func createClientFromCerts(ctx context.Context, authAddr string, certs *proto.Certs, tlsPrivateKey *rsa.PrivateKey) (*client.Client, error) {
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(tlsPrivateKey),
+	})
+
+	tlsCert, err := tls.X509KeyPair(certs.TLS, privateKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("TLS 키페어 파싱 실패: %w", err)
+	}
+
+	// 1. tls.Certificate로부터 tls.Config를 생성합니다.
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{tlsCert},
+	}
+
+	// 2. tls.Config를 사용하여 Credentials 객체를 생성합니다.
+	creds := client.LoadTLS(tlsConfig)
+
+	// 3. 생성된 Credentials로 새로운 클라이언트를 초기화합니다.
 	impersonatedClient, err := client.New(ctx, client.Config{
-		Addrs:       []string{s.Cfg.TeleportAuthAddr},
+		Addrs:       []string{authAddr},
 		Credentials: []client.Credentials{creds},
 	})
 	if err != nil {
-		return nil, targetRole, fmt.Errorf("failed to create impersonated client with role %s: %w", targetRole, err)
+		return nil, fmt.Errorf("인증서로 새 클라이언트 생성 실패: %w", err)
 	}
-	return impersonatedClient, targetRole, nil
+	return impersonatedClient, nil
 }
 
-// ProvisionTeleportUser는 사용자가 없으면 생성하고, 있으면 넘어갑니다.
-func (s *Service) ProvisionTeleportUser(ctx context.Context, githubUsername string) error {
-	// ... (기존 ProvisionTeleportUser 로직과 동일, t를 s로 변경) ...
-	// 아래는 완성된 코드
-	defaultRoles := []string{"basic-user"}
-	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	_, err := s.Client.GetUser(reqCtx, githubUsername, false)
-	if isCertExpiredError(err) {
-		log.Printf("[INFO] 인증서 만료 감지, 클라이언트 갱신 시도...")
-		if refreshErr := s.refreshClient(); refreshErr != nil {
-			log.Printf("[ERROR] 클라이언트 갱신 실패: %v", refreshErr)
-			return trace.Wrap(refreshErr)
-		}
-		_, err = s.Client.GetUser(reqCtx, githubUsername, false)
-	}
-
+func generateSSHKeyPair() ([]byte, *rsa.PrivateKey, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		if trace.IsNotFound(err) || strings.Contains(err.Error(), "not found") {
-			log.Printf("[INFO] 신규 사용자 '%s'를 생성합니다.", githubUsername)
-			user, err := types.NewUser(githubUsername)
-			if err != nil {
-				return trace.Wrap(err)
-			}
-			user.SetRoles(defaultRoles)
-			_, err = s.Client.CreateUser(reqCtx, user)
-			if err != nil {
-				return trace.Wrap(err)
-			}
-			log.Printf("[INFO] 사용자 '%s'가 역할 '%v'로 성공적으로 생성되었습니다.", githubUsername, defaultRoles)
-			return nil
-		}
-		return trace.Wrap(err)
+		return nil, nil, err
 	}
-	log.Printf("[INFO] 기존 사용자 '%s'의 로그인을 확인했습니다.", githubUsername)
-	return nil
-}
-
-// isCertExpiredError와 refreshClient는 비공개 헬퍼 함수로 유지
-func isCertExpiredError(err error) bool {
-	// ... (기존 로직과 동일) ...
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "certificate has expired") ||
-		strings.Contains(msg, "x509: certificate has expired") ||
-		strings.Contains(msg, "expired certificate") ||
-		strings.Contains(msg, "access denied: expired session")
-}
-
-func (s *Service) refreshClient() error {
-	// ... (기존 로직과 동일, t를 s로 변경) ...
-	creds := client.LoadIdentityFile(machineIDIdentityFile)
-	newClient, err := client.New(context.Background(), client.Config{
-		Addrs:       []string{s.Cfg.TeleportAuthAddr},
-		Credentials: []client.Credentials{creds},
-		DialOpts:    []grpc.DialOption{},
-	})
+	publicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	if s.Client != nil {
-		s.Client.Close()
+	return ssh.MarshalAuthorizedKey(publicKey), privateKey, nil
+}
+
+func (s *Service) getClusterName(ctx context.Context) string {
+	pingResp, err := s.Client.Ping(ctx)
+	if err != nil {
+		return ""
 	}
-	s.Client = newClient
-	return nil
+	return pingResp.ClusterName
 }
