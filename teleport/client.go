@@ -16,8 +16,10 @@ import (
 
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/client/proto"
+	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/trace"
 	"golang.org/x/crypto/ssh"
+	"google.golang.org/grpc"
 )
 
 // --- Teleport 서비스 ---
@@ -157,6 +159,76 @@ func (s *Service) analyzeRolesAndGetCertConfig(roleNames []string) *CertificateC
 
 	log.Println("관리자 역할이 없습니다. 일반 사용자(user) 권한으로 설정합니다.")
 	return config
+}
+
+// ProvisionTeleportUser는 사용자가 없으면 생성하고, 있으면 넘어갑니다.
+func (s *Service) ProvisionTeleportUser(ctx context.Context, githubUsername string) error {
+	// ... (기존 ProvisionTeleportUser 로직과 동일, t를 s로 변경) ...
+	// 아래는 완성된 코드
+	defaultRoles := []string{"basic-user"}
+	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	_, err := s.Client.GetUser(reqCtx, githubUsername, false)
+	if isCertExpiredError(err) {
+		log.Printf("[INFO] 인증서 만료 감지, 클라이언트 갱신 시도...")
+		if refreshErr := s.refreshClient(); refreshErr != nil {
+			log.Printf("[ERROR] 클라이언트 갱신 실패: %v", refreshErr)
+			return trace.Wrap(refreshErr)
+		}
+		_, err = s.Client.GetUser(reqCtx, githubUsername, false)
+	}
+
+	if err != nil {
+		if trace.IsNotFound(err) || strings.Contains(err.Error(), "not found") {
+			log.Printf("[INFO] 신규 사용자 '%s'를 생성합니다.", githubUsername)
+			user, err := types.NewUser(githubUsername)
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			user.SetRoles(defaultRoles)
+			_, err = s.Client.CreateUser(reqCtx, user)
+			if err != nil {
+				return trace.Wrap(err)
+			}
+			log.Printf("[INFO] 사용자 '%s'가 역할 '%v'로 성공적으로 생성되었습니다.", githubUsername, defaultRoles)
+			return nil
+		}
+		return trace.Wrap(err)
+	}
+	log.Printf("[INFO] 기존 사용자 '%s'의 로그인을 확인했습니다.", githubUsername)
+	return nil
+}
+
+// isCertExpiredError와 refreshClient는 비공개 헬퍼 함수로 유지
+func isCertExpiredError(err error) bool {
+	// ... (기존 로직과 동일) ...
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "certificate has expired") ||
+		strings.Contains(msg, "x509: certificate has expired") ||
+		strings.Contains(msg, "expired certificate") ||
+		strings.Contains(msg, "access denied: expired session")
+}
+
+func (s *Service) refreshClient() error {
+	// ... (기존 로직과 동일, t를 s로 변경) ...
+	creds := client.LoadIdentityFile(machineIDIdentityFile)
+	newClient, err := client.New(context.Background(), client.Config{
+		Addrs:       []string{s.Cfg.TeleportAuthAddr},
+		Credentials: []client.Credentials{creds},
+		DialOpts:    []grpc.DialOption{},
+	})
+	if err != nil {
+		return err
+	}
+	if s.Client != nil {
+		s.Client.Close()
+	}
+	s.Client = newClient
+	return nil
 }
 
 // --- 유틸리티 함수 ---
