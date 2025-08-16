@@ -48,7 +48,7 @@ func (h *Handlers) GetUsers(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -91,7 +91,7 @@ func (h *Handlers) DeleteUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		log.Printf("[DeleteUser] 클라이언트 생성 실패: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -137,7 +137,7 @@ func (h *Handlers) UpdateUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -175,7 +175,7 @@ func (h *Handlers) GetRoles(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -209,7 +209,7 @@ func (h *Handlers) CreateRole(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -248,7 +248,7 @@ func (h *Handlers) UpsertRole(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -286,7 +286,7 @@ func (h *Handlers) DeleteRole(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -314,7 +314,7 @@ func (h *Handlers) GetNodes(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -376,7 +376,7 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 권한 클라이언트 생성에 실패했습니다: " + err.Error()})
 		return
@@ -452,7 +452,7 @@ func (h *Handlers) DeleteNode(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -493,7 +493,7 @@ func (h *Handlers) GetAuditEvents(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -528,7 +528,7 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -682,7 +682,7 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, _, err := h.TeleportService.GetDynamicImpersonatedClient(ctx, impersonatedUser)
 	if err != nil {
 		log.Printf("ERROR: 가장 클라이언트 생성 실패: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "내부 서버 오류: 클라이언트 생성 실패"})
