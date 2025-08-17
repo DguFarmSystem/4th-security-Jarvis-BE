@@ -32,6 +32,13 @@ func LoadConfig() *Config {
 	if secretString == "" {
 		log.Fatal("치명적 오류: JWT_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
 	}
+
+	tbotIdentityFile := os.Getenv("TBOT_IDENTITY_FILE_PATH")
+	if tbotIdentityFile == "" {
+		tbotIdentityFile = "/shared-certs/event-handler-identity" // 환경 변수가 없을 경우 기본값 사용
+		log.Printf("정보: TBOT_IDENTITY_FILE_PATH 환경 변수가 설정되지 않아 기본값 '%s'를 사용합니다.", tbotIdentityFile)
+	}
+
 	cfg := &Config{
 		TeleportProxyAddr: os.Getenv("TELEPORT_PROXY_ADDR"),
 		TeleportAuthAddr:  os.Getenv("TELEPORT_AUTH_ADDR"),
@@ -53,17 +60,17 @@ func LoadConfig() *Config {
 		// Teleport 컨테이너의 감사 로그 경로 (볼륨을 통해 Go 앱 컨테이너와 공유 필요)
 		AuditLogPath:     os.Getenv("TELEPORT_AUDIT_LOG_PATH"), // 예: /var/lib/teleport/log/events.log
 		GCPProjectID:     os.Getenv("GCP_PROJECT_ID"),
-		GCPLocation:      os.Getenv("GCP_LOCATION"),            // 예: "us-central1"
-		GeminiModel:      os.Getenv("GEMINI_MODEL"),            // 예: "gemini-1.5-flash-001"
-		TbotIdentityFile: os.Getenv("TBOT_IDENTITY_FILE_PATH"), // 예: /etc/tbot/identity
+		GCPLocation:      os.Getenv("GCP_LOCATION"), // 예: "us-central1"
+		GeminiModel:      os.Getenv("GEMINI_MODEL"), // 예: "gemini-1.5-flash-001"
+		TbotIdentityFile: tbotIdentityFile,
 	}
 
 	if cfg.TeleportProxyAddr == "" || cfg.GitHubOAuthConfig.ClientID == "" {
 		log.Println("경고: 일부 기능에 필요한 환경 변수가 설정되지 않았을 수 있습니다.")
 	}
 	// 새로 추가된 필수 환경 변수 확인
-	if cfg.AuditLogPath == "" || cfg.GCPProjectID == "" || cfg.GCPLocation == "" || cfg.GeminiModel == "" || cfg.TbotIdentityFile == "" {
-		log.Fatal("치명적 오류: AuditLogPath, GCP 관련, TbotIdentityFile 환경 변수 설정이 필요합니다.")
+	if cfg.AuditLogPath == "" || cfg.GCPProjectID == "" || cfg.GCPLocation == "" || cfg.GeminiModel == "" {
+		log.Fatal("치명적 오류: AuditLogPath, GCP 관련 환경 변수 설정이 필요합니다.")
 	}
 
 	return cfg
