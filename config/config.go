@@ -35,7 +35,7 @@ func LoadConfig() *Config {
 
 	tbotIdentityFile := os.Getenv("TBOT_IDENTITY_FILE_PATH")
 	if tbotIdentityFile == "" {
-		tbotIdentityFile = "/shared-certs/event-handler-identity" // 환경 변수가 없을 경우 기본값 사용
+		tbotIdentityFile = "/shared-certs/cert-issuer-identity" // 환경 변수가 없을 경우 기본값 사용
 		log.Printf("정보: TBOT_IDENTITY_FILE_PATH 환경 변수가 설정되지 않아 기본값 '%s'를 사용합니다.", tbotIdentityFile)
 	}
 

@@ -38,5 +38,12 @@ outputs:
       type: directory
       # 생성된 파일을 공유 볼륨의 특정 경로에 저장합니다.
       path: /shared-certs/event-handler-identity
+
+  # 새로운 출력: 사용자 인증서 발급을 위한 ID 파일
+  - type: identity
+    roles: [teleport-cert-issuer] # 새로 정의할 역할 이름
+    destination:
+      type: directory
+      path: /shared-certs/cert-issuer-identity # 이 ID 파일이 저장될 경로
 proxy_server: openswdev.duckdns.org:3080
 debug: true
