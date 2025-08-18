@@ -97,6 +97,9 @@ func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 		return
 	}
 
+	c.SetSameSite(http.SameSiteNoneMode)
+
 	c.SetCookie("auth_token", tokenString, 3600, "/", "", true, true)
+
 	c.Redirect(http.StatusFound, "https://jarvis-indol-omega.vercel.app")
 }
