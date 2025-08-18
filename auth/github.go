@@ -98,7 +98,7 @@ func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 		return
 	}
 
-	c.SetCookie("auth_token", tokenString, 3600, "/", "", false, false)
+	c.SetCookie("auth_token", tokenString, 3600, "/", "", true, true)
 	// c.Redirect(http.StatusFound, "https://jarvis-indol-omega.vercel.app")
 	c.Redirect(http.StatusFound, "https://jarvis-indol-omega.vercel.app")
 }
