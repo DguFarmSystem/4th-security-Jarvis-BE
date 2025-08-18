@@ -46,16 +46,12 @@ func LoadConfig() *Config {
 			Endpoint:     github.Endpoint,
 			Scopes:       []string{"read:user", "read:org"},
 		},
-
-		// --- 새로 추가된 설정값 초기화 ---
-		// Docker 네트워크 내부 Logstash 컨테이너 주소와 포트
-		LogstashURL: "http://event-listen_logstash_1:5001",
-		// Teleport 컨테이너의 감사 로그 경로 (볼륨을 통해 Go 앱 컨테이너와 공유 필요)
-		AuditLogPath:     os.Getenv("TELEPORT_AUDIT_LOG_PATH"), // 예: /var/lib/teleport/log/events.log
+		LogstashURL:      "http://event-listen_logstash_1:5001",
+		AuditLogPath:     os.Getenv("TELEPORT_AUDIT_LOG_PATH"),
 		GCPProjectID:     os.Getenv("GCP_PROJECT_ID"),
-		GCPLocation:      os.Getenv("GCP_LOCATION"),            // 예: "us-central1"
-		GeminiModel:      os.Getenv("GEMINI_MODEL"),            // 예: "gemini-1.5-flash-001"
-		TbotIdentityFile: os.Getenv("TBOT_IDENTITY_FILE_PATH"), // 예: /etc/tbot/identity
+		GCPLocation:      os.Getenv("GCP_LOCATION"),
+		GeminiModel:      os.Getenv("GEMINI_MODEL"),
+		TbotIdentityFile: os.Getenv("TBOT_IDENTITY_FILE_PATH"),
 	}
 
 	if cfg.TeleportProxyAddr == "" || cfg.GitHubOAuthConfig.ClientID == "" {

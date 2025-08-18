@@ -14,8 +14,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-const machineIDIdentityFile = "/opt/machine-id/identity"
-
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
 	Client *client.Client
@@ -24,7 +22,8 @@ type Service struct {
 
 // NewService는 새로운 Teleport 서비스를 생성합니다.
 func NewService(cfg *config.Config) (*Service, error) {
-	creds := client.LoadIdentityFile(machineIDIdentityFile)
+	cfg = config.LoadConfig()
+	creds := client.LoadIdentityFile(cfg.TbotIdentityFile)
 	mainClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},
@@ -123,7 +122,7 @@ func isCertExpiredError(err error) bool {
 
 func (s *Service) refreshClient() error {
 	// ... (기존 로직과 동일, t를 s로 변경) ...
-	creds := client.LoadIdentityFile(machineIDIdentityFile)
+	creds := client.LoadIdentityFile(config.Config.TbotIdentityFile)
 	newClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{s.Cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},

@@ -1,5 +1,3 @@
-# 파일 위치: .github/workflows/deploy.yml
-
 name: CI/CD Backend API to GCP
 
 on:
@@ -9,43 +7,34 @@ on:
     branches: [ "main" ] # 'main' 브랜치에 대한 Pull Request가 생성될 때 실행
 
 env:
-  # Docker Hub 사용자 이름과 이미지 이름을 설정합니다.
   DOCKER_IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/backend_api_i
 
 jobs:
-  # --------------------
-  # CI: 빌드 및 이미지 푸시
-  # --------------------
+  # 빌드 및 이미지 푸시
   build-and-push:
     runs-on: ubuntu-latest
-    steps:
-      # 1. GitHub 저장소의 소스 코드를 워크플로우 환경으로 가져옵니다.
+    steps:      
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      # 2. Docker Hub에 로그인합니다. (GitHub Secrets 사용)
+      
       - name: Login to Docker Hub
         uses: docker/login-action@v3  
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # 3. Docker 이미지를 빌드하고 Docker Hub에 푸시합니다.
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: . # Dockerfile이 있는 경로
           push: true
-          tags: ${{ env.DOCKER_IMAGE_NAME }}:latest # 'latest' 태그로 푸시
+          tags: ${{ env.DOCKER_IMAGE_NAME }}:latest 
 
-  # --------------------
   # CD: 서버에 배포
-  # --------------------
   deploy-to-gcp:
-    needs: build-and-push # 'build-and-push' 작업이 성공해야만 실행됩니다.
+    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      # 1. GCP 서버에 SSH로 접속하여 배포 스크립트를 실행합니다.
+      # GCP 서버에 SSH로 접속하여 배포 스크립트를 실행
       - name: Deploy to GCP
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -53,30 +42,20 @@ jobs:
           username: ${{ secrets.GCP_USERNAME }}
           key: ${{ secrets.GCP_SSH_KEY }}
           script: |
-            # Docker Hub에서 최신 이미지를 내려받습니다.
             docker pull ${{ env.DOCKER_IMAGE_NAME }}:latest
             
-            # 기존에 실행 중인 backend-api-c 컨테이너가 있다면 중지하고 삭제합니다.
             if [ "$(docker ps -aq -f name=backend-api-c)" ]; then
                 docker stop backend-api-c
                 docker rm backend-api-c
             fi
 
-            # GitHub Secret 값을 서버에 파일로 저장합니다.
             printf "%s" '${{ secrets.GCP_SA_KEY }}' >> gcp-sa-key.json
 
-            # 1. 이전 배포에서 생성된 봇이 있다면 삭제합니다.
-            # '|| true'를 붙여, 봇이 존재하지 않아 오류가 발생하더라도 스크립트가 중단되지 않도록 합니다.
             echo "Cleaning up bot from previous deployment..."
             docker exec teleport-daemon tctl bots rm jarvis-bot || true
 
-
-            # 1. 배포 직전에 teleport-daemon 컨테이너를 통해 일회용 조인 토큰을 생성합니다.
-            # --ttl=5m: 이 토큰은 5분만 유효하므로 보안에 매우 유리합니다.
-            echo "Generating a new one-time join token for the bot..."
             BOT_JOIN_TOKEN=$(docker exec teleport-daemon tctl bots add jarvis-bot --roles=cert-admin-role,web-terminal-bot-role,editor,basic-user,access,api-impersonator,teleport-event-handler --ttl=5m | grep 'The bot token: ' | awk '{print $4}')
             
-            # 토큰이 정상적으로 추출되었는지 확인하는 방어 로직 (디버깅에 유용)
             if [ -z "$BOT_JOIN_TOKEN" ]; then
               echo "Error: Failed to generate or extract bot join token."
               exit 1
@@ -84,7 +63,6 @@ jobs:
 
             TELEPORT_DAEMON_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' teleport-daemon)            
             
-            # 최신 이미지로 새로운 컨테이너를 실행합니다.
             docker run -d --name backend-api-c \
               --network=teleport-net \
               -p 8080:8080 \
