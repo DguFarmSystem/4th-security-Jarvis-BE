@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
-
 	"teleport-backend/config"
 	"teleport-backend/teleport"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -93,7 +92,6 @@ func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 		return
 	}
 
-	c.SetCookie("auth_token", tokenString, 3600, "/", "", false, false)
-	// c.Redirect(http.StatusFound, "https://jarvis-indol-omega.vercel.app")
+	c.SetCookie("auth_token", tokenString, 3600, "/", "", true, true)
 	c.Redirect(http.StatusFound, "https://jarvis-indol-omega.vercel.app")
 }

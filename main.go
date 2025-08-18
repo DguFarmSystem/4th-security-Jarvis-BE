@@ -45,10 +45,10 @@ func main() {
 	// CORS 미들웨어 설정
 	corsConfig := cors.Config{
 		AllowOrigins: []string{
-        "https://jarvis-indol-omega.vercel.app",
-        "http://localhost:5173",
-        "https://openswdev.duckdns.org:3000",
-    },
+			"https://jarvis-indol-omega.vercel.app",
+			"http://localhost:5173",
+			"https://openswdev.duckdns.org:3000",
+		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},

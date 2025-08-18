@@ -15,7 +15,7 @@ import (
 	"teleport-backend/teleport"
 	"time"
 
-	"github.com/gin-gonic/gin" // UserCertsRequest를 위해 필요
+	"github.com/gin-gonic/gin"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/trace"
@@ -25,20 +25,19 @@ import (
 // Handlers는 모든 API 핸들러 메서드를 가집니다.
 type Handlers struct {
 	TeleportService *teleport.Service
-	GeminiService   services.Analyzer // GeminiService 인터페이스
+	GeminiService   services.Analyzer
 	HttpClient      *http.Client
 }
 
-func NewHandlers(ts *teleport.Service, gs services.Analyzer) *Handlers { // <--- 올바른 타입
+func NewHandlers(ts *teleport.Service, gs services.Analyzer) *Handlers {
 	return &Handlers{
 		TeleportService: ts,
-		GeminiService:   gs, // 이제 정상적으로 할당됩니다.
+		GeminiService:   gs,
 		HttpClient:      &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
 func (h *Handlers) GetUsers(c *gin.Context) {
-	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
@@ -55,10 +54,8 @@ func (h *Handlers) GetUsers(c *gin.Context) {
 	}
 	defer impersonatedClient.Close()
 
-	// 5. 생성된 클라이언트로 최종 API를 호출합니다. 이 요청은 'targetRole'의 권한으로 실행됩니다.
 	users, err := impersonatedClient.GetUsers(ctx, false)
 	if err != nil {
-		// 이제 권한이 없으면 여기서 'access denied' 에러가 발생합니다.
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다: " + err.Error()})
 		return
 	}
@@ -67,8 +64,6 @@ func (h *Handlers) GetUsers(c *gin.Context) {
 }
 
 func (h *Handlers) DeleteUser(c *gin.Context) {
-
-	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
@@ -99,11 +94,8 @@ func (h *Handlers) DeleteUser(c *gin.Context) {
 	}
 	defer impersonatedClient.Close()
 
-	// 5. 생성된 클라이언트로 최종 API를 호출합니다. 이 요청은 'targetRole'의 권한으로 실행됩니다.
 	err = impersonatedClient.DeleteUser(ctx, userToDelete)
 	if err != nil {
-		// 이제 권한이 없으면 여기서 'access denied' 에러가 발생합니다.
-
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("'%s' 사용자 삭제에 실패했습니다: %s", userToDelete, err.Error())})
 		return
 	}
@@ -113,25 +105,25 @@ func (h *Handlers) DeleteUser(c *gin.Context) {
 }
 
 func (h *Handlers) UpdateUser(c *gin.Context) {
-	// 1. URL 파라미터에서 업데이트할 사용자 이름을 가져옵니다.
 	userToUpdate := c.Param("username")
 	if userToUpdate == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "업데이트할 사용자의 이름(username)이 반드시 필요합니다."})
 		return
 	}
-	// 2. 요청 본문(JSON)에서 업데이트할 데이터를 읽어옵니다.
+	// 요청 본문(JSON)에서 업데이트할 데이터를 읽어옵니다.
 	var req UpdateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "요청 본문이 잘못되었습니다: " + err.Error()})
 		return
 	}
 
-	// 1. 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
+	// 미들웨어로부터 현재 요청을 보낸 사용자의 이름을 가져옵니다.
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
 		return
 	}
+
 	log.Printf("[UpdateUser] 요청 시작: 요청자='%s', 대상='%s', 요청 데이터: %+v", impersonatedUser, userToUpdate, req)
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
@@ -145,12 +137,12 @@ func (h *Handlers) UpdateUser(c *gin.Context) {
 	defer impersonatedClient.Close()
 
 	// 업데이트를 위해 먼저 기존 사용자 정보를 가져옵니다.
-	user, err := impersonatedClient.GetUser(ctx, userToUpdate, false) // `false`는 withSecrets를 비활성화
+	user, err := impersonatedClient.GetUser(ctx, userToUpdate, false)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("사용자 '%s' 정보 조회에 실패했습니다: %s", userToUpdate, err.Error())})
 		return
 	}
-	// 6. 가져온 사용자 정보에 요청받은 데이터를 적용합니다. (예: 역할 업데이트)
+	// 가져온 사용자 정보에 요청받은 데이터를 적용합니다. (예: 역할 업데이트)
 	user.SetRoles(req.Roles)
 
 	// 7. 변경된 사용자 객체로 업데이트 API를 호출합니다.
