@@ -77,7 +77,12 @@ func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 		return
 	}
 
-	
+	// 사용자 프로비저닝
+	err = h.TeleportService.ProvisionTeleportUser(c.Request.Context(), user.Login)
+	if err != nil {
+		c.String(http.StatusInternalServerError, "사용자 계정을 준비하는 중 오류가 발생했습니다.")
+		return
+	}
 
 	// JWT 생성 및 쿠키 설정
 	claims := jwt.MapClaims{
@@ -92,6 +97,9 @@ func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 		return
 	}
 
-	c.SetCookie("auth_token", tokenString, 3600, "/", "", true, true)
+	c.SetSameSite(http.SameSiteNoneMode)
+
+	c.SetCookie("auth_token", tokenString, 3600, "/", "", true, false)
+
 	c.Redirect(http.StatusFound, "https://jarvis-indol-omega.vercel.app")
 }
