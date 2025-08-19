@@ -15,6 +15,7 @@ import (
 
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/client/proto"
+	"github.com/gravitational/teleport/api/identityfile"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/trace"
 	"golang.org/x/crypto/ssh"
@@ -25,8 +26,9 @@ import (
 const machineIDIdentityFile = "/opt/jarvis-service-identity" // tbot이 생성한 ID 파일의 일반적인 경로
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
-	Client *client.Client
-	Cfg    *config.Config
+	Client     *client.Client
+	Cfg        *config.Config
+	caCertPool *x509.CertPool
 }
 
 // CertificateConfig는 인증서 생성 시 사용할 설정입니다.
@@ -39,7 +41,21 @@ type CertificateConfig struct {
 // NewService는 새로운 Teleport 서비스를 생성합니다.
 // tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
 func NewService(cfg *config.Config) (*Service, error) {
-	log.Println("tbot ID 파일을 사용하여 Teleport 클라이언트 생성 시도...")
+
+	id, err := identityfile.ReadFile(machineIDIdentityFile)
+	if err != nil {
+		return nil, fmt.Errorf("tbot ID 파일 읽기 실패: %w", err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	// *** 해결책: 제공된 구조체 정의에 따라 id.CACerts.TLS 필드를 직접 순회합니다. ***
+	for _, caBytes := range id.CACerts.TLS {
+		if ok := caCertPool.AppendCertsFromPEM(caBytes); !ok {
+			return nil, fmt.Errorf("ID 파일에서 CA 인증서 추가 실패")
+		}
+	}
+	log.Println("[INFO] tbot ID 파일에서 CA 인증서를 성공적으로 로드했습니다.")
+
 	creds := client.LoadIdentityFile(machineIDIdentityFile)
 	mainClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{cfg.TeleportAuthAddr},
@@ -66,7 +82,6 @@ func (s *Service) Close() {
 
 // GetImpersonatedClient 함수는 특정 사용자를 위해 지정된 단기 인증서를 발급하고, 그 인증서를 사용하는 새로운 Teleport 클라이언트를 반환합니다.
 func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
-
 	log.Printf("[DEBUG] GetImpersonatedClient 호출됨 (사용자: %s)", username)
 	// 1. 단기 인증서를 위한 새로운 키 쌍을 메모리에서 생성합니다.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -119,6 +134,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		privateKey: priv,
 		tlsCert:    certs.TLS,
 		sshCert:    certs.SSH,
+		caCertPool: s.caCertPool,
 	}
 	log.Println("[DEBUG] 단계 3: 메모리 내 자격증명(creds) 생성 성공")
 	log.Println("[DEBUG] 단계 4: Impersonated 클라이언트 생성 시작...")
@@ -141,6 +157,7 @@ type inMemoryCreds struct {
 	privateKey ed25519.PrivateKey
 	tlsCert    []byte
 	sshCert    []byte
+	caCertPool *x509.CertPool
 }
 
 // TLSConfig creates a valid *tls.Config from the in-memory key and cert.
@@ -167,6 +184,7 @@ func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 성공")
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
+		RootCAs:      c.caCertPool,
 	}, nil
 }
 
