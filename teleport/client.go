@@ -9,7 +9,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"teleport-backend/config"
@@ -66,35 +65,34 @@ func (s *Service) Close() {
 
 // GetDynamicImpersonatedClient는 사용자의 역할을 동적으로 읽어와서
 // 해당 역할에 맞는 단기 인증서를 발급받아 클라이언트를 생성합니다.
-func (s *Service) GetDynamicImpersonatedClient(ctx context.Context, username string) (*client.Client, *CertificateConfig, error) {
+func (s *Service) GetDynamicImpersonatedClient(ctx context.Context, username string) (*client.Client, error) {
 	// 1. 사용자 정보를 동적으로 조회
 	user, err := s.Client.GetUser(ctx, username, false)
 	if err != nil {
 		if trace.IsNotFound(err) {
-			return nil, nil, fmt.Errorf("사용자 '%s'를 찾을 수 없습니다", username)
+			return nil, fmt.Errorf("사용자 '%s'를 찾을 수 없습니다", username)
 		}
-		return nil, nil, fmt.Errorf("사용자 정보 조회 실패: %w", err)
+		return nil, fmt.Errorf("사용자 정보 조회 실패: %w", err)
 	}
 
 	// 2. 사용자의 현재 역할 가져오기
 	userRoles := user.GetRoles()
 	if len(userRoles) == 0 {
-		return nil, nil, fmt.Errorf("사용자 '%s'에게 할당된 역할이 없습니다", username)
+		return nil, fmt.Errorf("사용자 '%s'에게 할당된 역할이 없습니다", username)
 	}
 	log.Printf("사용자 '%s'의 역할: %v", username, userRoles)
 
 	// 3. 역할 기반으로 인증서 설정 결정 (요구사항의 핵심)
-	certConfig := s.analyzeRolesAndGetCertConfig(userRoles)
-	log.Printf("역할 분석 결과 -> AccessLevel: %s, TTL: %v", certConfig.AccessLevel, certConfig.TTL)
+	certificateTTL := s.getTTLForRoles(userRoles)
 
 	// 4. 인증서 발급에 필요한 키 페어 생성
 	sshPublicKey, _, err := generateSSHKeyPair() // sshPrivateKey는 사용되지 않으므로 무시
 	if err != nil {
-		return nil, nil, fmt.Errorf("SSH 키 페어 생성 실패: %w", err)
+		return nil, fmt.Errorf("SSH 키 페어 생성 실패: %w", err)
 	}
 	tlsPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return nil, nil, fmt.Errorf("TLS 키 페어 생성 실패: %w", err)
+		return nil, fmt.Errorf("TLS 키 페어 생성 실패: %w", err)
 	}
 	tlsPublicKeyDER, _ := x509.MarshalPKIXPublicKey(&tlsPrivateKey.PublicKey)
 
@@ -103,7 +101,7 @@ func (s *Service) GetDynamicImpersonatedClient(ctx context.Context, username str
 		SSHPublicKey:   sshPublicKey,
 		TLSPublicKey:   tlsPublicKeyDER,
 		Username:       username,
-		Expires:        time.Now().Add(certConfig.TTL),
+		Expires:        time.Now().Add(certificateTTL),
 		RouteToCluster: s.getClusterName(ctx),
 		Usage:          proto.UserCertsRequest_All,
 		// 허용된 로그인 목록을 명시적으로 설정
@@ -113,44 +111,35 @@ func (s *Service) GetDynamicImpersonatedClient(ctx context.Context, username str
 	// 6. 단기 인증서 생성 요청
 	certs, err := s.Client.GenerateUserCerts(ctx, certsReq)
 	if err != nil {
-		return nil, nil, fmt.Errorf("사용자 '%s'의 단기 인증서 생성 실패: %w", username, err)
+		return nil, fmt.Errorf("사용자 '%s'의 단기 인증서 생성 실패: %w", username, err)
 	}
 
 	// 7. 받은 인증서로 새로운 클라이언트 생성
 	impersonatedClient, err := createClientFromCerts(ctx, s.Cfg.TeleportAuthAddr, certs, tlsPrivateKey)
 	if err != nil {
-		return nil, nil, fmt.Errorf("인증서를 사용한 클라이언트 생성 실패: %w", err)
+		return nil, fmt.Errorf("인증서를 사용한 클라이언트 생성 실패: %w", err)
 	}
 
-	log.Printf("사용자 '%s'를 위한 동적 클라이언트 생성 성공 (역할: %v, 레벨: %s, TTL: %v)",
-		username, userRoles, certConfig.AccessLevel, certConfig.TTL)
+	log.Printf("사용자 '%s'를 위한 동적 클라이언트 생성 성공 (역할: %v, TTL: %v)",
+		username, userRoles, certificateTTL)
 
-	return impersonatedClient, certConfig, nil
+	return impersonatedClient, nil
 }
 
-// analyzeRolesAndGetCertConfig는 역할 목록을 분석하여 인증서 설정을 결정합니다.
-// "A(admin)로 요청하면 admin 권한, B(user)로 요청하면 일반 user 권한" 요구사항을 처리하는 핵심 함수입니다.
-func (s *Service) analyzeRolesAndGetCertConfig(roleNames []string) *CertificateConfig {
-	// 기본값: 가장 낮은 권한
-	config := &CertificateConfig{
-		TTL:           5 * time.Minute, // 일반 사용자는 5분
-		AccessLevel:   "user",
-		AllowedLogins: []string{"root", "ubuntu"}, // 기본적으로 허용할 로그인 계정
-	}
+// role을 읽어 sso 사용자에게 인증서 반환
+func (s *Service) getTTLForRoles(roleNames []string) time.Duration {
+	const adminRole = "basic-user"
 
-	// 역할 이름에 'admin'이 포함되어 있으면 높은 권한 부여
+	// 사용자가 역할이 있는지 확인합니다.
 	for _, roleName := range roleNames {
-		if strings.Contains(strings.ToLower(roleName), "admin") {
-			config.TTL = 60 * time.Minute // 관리자는 1시간
-			config.AccessLevel = "admin"
-			config.AllowedLogins = append(config.AllowedLogins, "administrator") // admin 전용 로그인 추가
-			log.Printf("'%s' 역할 감지: 관리자(admin) 권한으로 설정합니다.", roleName)
-			return config // admin 권한이 발견되면 즉시 반환
+		if roleName == adminRole {
+			log.Printf("'%s' 역할이 감지되어 TTL을 1시간으로 설정합니다.", adminRole)
+			return 60 * time.Minute // 관리자는 1시간
 		}
 	}
 
-	log.Println("관리자 역할이 없습니다. 일반 사용자(user) 권한으로 설정합니다.")
-	return config
+	log.Println("기본 TTL인 5분으로 설정합니다.")
+	return 5 * time.Minute // 그 외 사용자는 5분
 }
 
 // --- 유틸리티 함수 ---
