@@ -66,35 +66,45 @@ func (s *Service) Close() {
 // GetDynamicImpersonatedClient는 사용자의 역할을 동적으로 읽어와서
 // 해당 역할에 맞는 단기 인증서를 발급받아 클라이언트를 생성합니다.
 func (s *Service) GetDynamicImpersonatedClient(ctx context.Context, username string) (*client.Client, error) {
+	log.Printf("[DEBUG] GetDynamicImpersonatedClient 시작: 사용자 '%s'에 대한 클라이언트 생성 프로세스 개시", username)
+
 	// 1. 사용자 정보를 동적으로 조회
 	user, err := s.Client.GetUser(ctx, username, false)
 	if err != nil {
 		if trace.IsNotFound(err) {
+			log.Printf("[ERROR] 사용자 '%s'를 찾을 수 없습니다: %v", username, err)
 			return nil, fmt.Errorf("사용자 '%s'를 찾을 수 없습니다", username)
 		}
+		log.Printf("[ERROR] 사용자 정보 조회 실패: %v", err)
 		return nil, fmt.Errorf("사용자 정보 조회 실패: %w", err)
 	}
+	log.Printf("[DEBUG] 1/7: 사용자 정보 조회 성공.")
 
 	// 2. 사용자의 현재 역할 가져오기
 	userRoles := user.GetRoles()
 	if len(userRoles) == 0 {
+		log.Printf("[ERROR] 사용자 '%s'에게 할당된 역할이 없습니다.", username)
 		return nil, fmt.Errorf("사용자 '%s'에게 할당된 역할이 없습니다", username)
 	}
-	log.Printf("사용자 '%s'의 역할: %v", username, userRoles)
+	log.Printf("[DEBUG] 2/7: 사용자 '%s'의 역할 확인: %v", username, userRoles)
 
 	// 3. 역할 기반으로 인증서 설정 결정 (요구사항의 핵심)
 	certificateTTL := s.getTTLForRoles(userRoles)
+	log.Printf("[DEBUG] 3/7: 결정된 TTL: %v", certificateTTL)
 
 	// 4. 인증서 발급에 필요한 키 페어 생성
 	sshPublicKey, _, err := generateSSHKeyPair() // sshPrivateKey는 사용되지 않으므로 무시
 	if err != nil {
+		log.Printf("[ERROR] SSH 키 페어 생성 실패: %v", err)
 		return nil, fmt.Errorf("SSH 키 페어 생성 실패: %w", err)
 	}
 	tlsPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
+		log.Printf("[ERROR] TLS 키 페어 생성 실패: %v", err)
 		return nil, fmt.Errorf("TLS 키 페어 생성 실패: %w", err)
 	}
 	tlsPublicKeyDER, _ := x509.MarshalPKIXPublicKey(&tlsPrivateKey.PublicKey)
+	log.Printf("[DEBUG] 4/7: 키 페어 생성 완료.")
 
 	// 5. 단기 인증서 요청 생성
 	certsReq := proto.UserCertsRequest{
@@ -107,20 +117,26 @@ func (s *Service) GetDynamicImpersonatedClient(ctx context.Context, username str
 		// 허용된 로그인 목록을 명시적으로 설정
 
 	}
+	log.Printf("[DEBUG] 5/7: 인증서 요청 생성 완료: Username=%s, Expires=%s", certsReq.Username, certsReq.Expires.Format(time.RFC3339))
 
 	// 6. 단기 인증서 생성 요청
+	log.Printf("[DEBUG] 6/7: Teleport에 단기 인증서 생성을 요청합니다.")
 	certs, err := s.Client.GenerateUserCerts(ctx, certsReq)
 	if err != nil {
+		log.Printf("[ERROR] 사용자 '%s'의 단기 인증서 생성 실패: %v", username, err)
 		return nil, fmt.Errorf("사용자 '%s'의 단기 인증서 생성 실패: %w", username, err)
 	}
+	log.Printf("[DEBUG] 6/7: 단기 인증서 생성 성공.")
 
 	// 7. 받은 인증서로 새로운 클라이언트 생성
+	log.Printf("[DEBUG] 7/7: 발급받은 인증서로 새로운 Teleport 클라이언트를 생성합니다.")
 	impersonatedClient, err := createClientFromCerts(ctx, s.Cfg.TeleportAuthAddr, certs, tlsPrivateKey)
 	if err != nil {
+		log.Printf("[ERROR] 인증서를 사용한 클라이언트 생성 실패: %v", err)
 		return nil, fmt.Errorf("인증서를 사용한 클라이언트 생성 실패: %w", err)
 	}
 
-	log.Printf("사용자 '%s'를 위한 동적 클라이언트 생성 성공 (역할: %v, TTL: %v)",
+	log.Printf("[SUCCESS] 사용자 '%s'를 위한 동적 클라이언트 생성 성공 (역할: %v, TTL: %v)",
 		username, userRoles, certificateTTL)
 
 	return impersonatedClient, nil
