@@ -137,7 +137,20 @@ type inMemoryCreds struct {
 // TLSConfig creates a valid *tls.Config from the in-memory key and cert.
 func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 호출됨")
-	cert, err := tls.X509KeyPair(c.tlsCert, c.privateKey)
+
+	// *** 해결책: "날것(raw)" 개인키를 PEM 형식으로 인코딩합니다. ***
+	privDER, err := x509.MarshalPKCS8PrivateKey(c.privateKey)
+	if err != nil {
+		log.Printf("[ERROR] inMemoryCreds: 개인키를 DER 형식으로 변환 실패: %v", err)
+		return nil, trace.Wrap(err)
+	}
+	privPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: privDER,
+	})
+
+	// PEM으로 인코딩된 개인키(privPEM)를 사용합니다.
+	cert, err := tls.X509KeyPair(c.tlsCert, privPEM)
 	if err != nil {
 		log.Printf("[ERROR] inMemoryCreds: tls.X509KeyPair 생성 실패: %v", err)
 		return nil, trace.Wrap(err)
