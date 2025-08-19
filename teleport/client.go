@@ -78,7 +78,7 @@ func NewService(cfg *config.Config) (*Service, error) {
 		return nil, fmt.Errorf("Teleport 클러스터(%s) 연결 실패: %w", cfg.TeleportAuthAddr, err)
 	}
 	log.Printf("Teleport 클러스터(%s)에 성공적으로 연결되었습니다.", cfg.TeleportAuthAddr)
-	return &Service{Client: mainClient, Cfg: cfg}, nil
+	return &Service{Client: mainClient, Cfg: cfg, caCertPool: caCertPool}, nil
 }
 func (s *Service) Close() {
 	if s.Client != nil {
@@ -143,6 +143,22 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		caCertPool: s.caCertPool,
 	}
 	log.Println("[DEBUG] 단계 3: 메모리 내 자격증명(creds) 생성 성공")
+
+	log.Println("--- [DEBUG] client.New() 호출 전 최종 creds 확인 ---")
+	if creds.privateKey == nil {
+		log.Println("[DEBUG] creds.privateKey: nil")
+	} else {
+		log.Println("[DEBUG] creds.privateKey: OK (not nil)")
+	}
+	log.Printf("[DEBUG] creds.tlsCert 길이: %d", len(creds.tlsCert))
+	log.Printf("[DEBUG] creds.sshCert 길이: %d", len(creds.sshCert))
+	if creds.caCertPool == nil {
+		log.Println("[DEBUG] creds.caCertPool: nil")
+	} else {
+		log.Printf("[DEBUG] creds.caCertPool: OK (%d개의 CA 인증서 포함)", len(creds.caCertPool.Subjects()))
+	}
+	log.Println("-------------------------------------------------")
+
 	log.Println("[DEBUG] 단계 4: Impersonated 클라이언트 생성 시작...")
 	impersonatedClient, err := client.New(ctx, client.Config{
 		Addrs:       []string{s.Cfg.TeleportAuthAddr},
