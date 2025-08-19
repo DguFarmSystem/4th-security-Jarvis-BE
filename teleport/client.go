@@ -66,6 +66,7 @@ func (s *Service) Close() {
 
 // GetImpersonatedClient 함수는 특정 사용자를 위해 지정된 단기 인증서를 발급하고, 그 인증서를 사용하는 새로운 Teleport 클라이언트를 반환합니다.
 func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
+
 	log.Printf("[DEBUG] GetImpersonatedClient 호출됨 (사용자: %s)", username)
 	// 1. 단기 인증서를 위한 새로운 키 쌍을 메모리에서 생성합니다.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -92,14 +93,8 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		Type:  "PUBLIC KEY",
 		Bytes: tlsPubKeyDER,
 	})
-
-	clusterName, err := s.Client.GetClusterName(ctx)
-	if err != nil {
-		log.Printf("[ERROR] 단계 1.2: 클러스터 이름 조회 실패: %v", err)
-		return nil, "", fmt.Errorf("클러스터 이름 조회 실패: %w", err)
-	}
-	log.Printf("[DEBUG] 단계 1.2: 클러스터 이름 조회 성공: %s", clusterName.GetClusterName())
-
+	const clusterName = "mycluster.local"
+	log.Printf("[DEBUG] 단계 1.2: 고정된 클러스터 이름 사용: %s", clusterName)
 	// 2. 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
 	log.Println("[DEBUG] 단계 2: Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
 	certs, err := s.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
@@ -107,7 +102,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		TLSPublicKey:   tlsPubKeyPEM,
 		Username:       username,
 		Expires:        time.Now().UTC().Add(5 * time.Minute),
-		RouteToCluster: clusterName.GetClusterName(),
+		RouteToCluster: clusterName,
 	})
 	if err != nil {
 		log.Printf("[ERROR] 단계 2: 사용자 인증서 발급 실패: %v", err)
