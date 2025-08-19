@@ -92,13 +92,22 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		Type:  "PUBLIC KEY",
 		Bytes: tlsPubKeyDER,
 	})
+
+	clusterName, err := s.Client.GetClusterName(ctx)
+	if err != nil {
+		log.Printf("[ERROR] 단계 1.2: 클러스터 이름 조회 실패: %v", err)
+		return nil, "", fmt.Errorf("클러스터 이름 조회 실패: %w", err)
+	}
+	log.Printf("[DEBUG] 단계 1.2: 클러스터 이름 조회 성공: %s", clusterName.GetClusterName())
+
 	// 2. 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
 	log.Println("[DEBUG] 단계 2: Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
 	certs, err := s.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
-		SSHPublicKey: pubKeyBytes,
-		TLSPublicKey: tlsPubKeyPEM,
-		Username:     username,
-		Expires:      time.Now().UTC().Add(5 * time.Minute),
+		SSHPublicKey:   pubKeyBytes,
+		TLSPublicKey:   tlsPubKeyPEM,
+		Username:       username,
+		Expires:        time.Now().UTC().Add(5 * time.Minute),
+		RouteToCluster: clusterName.GetClusterName(),
 	})
 	if err != nil {
 		log.Printf("[ERROR] 단계 2: 사용자 인증서 발급 실패: %v", err)
