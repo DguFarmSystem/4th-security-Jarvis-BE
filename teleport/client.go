@@ -5,6 +5,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"strings"
@@ -80,10 +82,21 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 	}
 	pubKeyBytes := ssh.MarshalAuthorizedKey(sshPubKey)
 	log.Println("[DEBUG] 단계 1.1: SSH 공개키 변환 성공")
+
+	// TLS 공개키를 위한 PEM 인코딩
+	tlsPubKeyDER, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return nil, "", fmt.Errorf("TLS 공개키 DER 인코딩 실패: %w", err)
+	}
+	tlsPubKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: tlsPubKeyDER,
+	})
 	// 2. 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
 	log.Println("[DEBUG] 단계 2: Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
 	certs, err := s.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
-		SSHPublicKey: pubKeyBytes, // 변경된 필드 이름 사용
+		SSHPublicKey: pubKeyBytes,
+		TLSPublicKey: tlsPubKeyPEM,
 		Username:     username,
 		Expires:      time.Now().UTC().Add(5 * time.Minute),
 	})
