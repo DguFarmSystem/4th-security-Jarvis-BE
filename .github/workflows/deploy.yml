@@ -82,6 +82,7 @@ jobs:
               -v ~/teleport-daemon/keys/fullchain.pem:/etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem \
               -v ~/teleport-daemon/keys/privkey.pem:/etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem \
               -v tbot-certs-volume:/opt/machine-id \
+              -v ~/identity:/opt/jarvis-service-identity:ro \
               -v /var/lib/teleport/log/events.log:/var/lib/teleport/log/events.log:ro \
               -v ~/gcp-sa-key.json:/etc/gcp/gcp-sa-key.json:ro \
               --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
