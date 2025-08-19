@@ -44,6 +44,6 @@ outputs:
     roles: [teleport-cert-issuer] # 새로 정의할 역할 이름
     destination:
       type: directory
-      path: /shared-certs/cert-issuer-identity # 이 ID 파일이 저장될 경로
+      path: /opt/machine-id/cert-issue # 이 ID 파일이 저장될 경로
 proxy_server: openswdev.duckdns.org:3080
 debug: true
