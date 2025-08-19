@@ -42,15 +42,16 @@ type CertificateConfig struct {
 // tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
 func NewService(cfg *config.Config) (*Service, error) {
 
+	// *** 해결책: 시작 시 tbot ID 파일에서 CA 인증서를 읽어와 메모리에 저장합니다. ***
 	id, err := identityfile.ReadFile(machineIDIdentityFile)
 	if err != nil {
 		return nil, fmt.Errorf("tbot ID 파일 읽기 실패: %w", err)
 	}
 
 	caCertPool := x509.NewCertPool()
-	// *** 해결책: 제공된 구조체 정의에 따라 id.CACerts.TLS 필드를 직접 순회합니다. ***
-	for _, caBytes := range id.CACerts.TLS {
+	for i, caBytes := range id.CACerts.TLS {
 		if ok := caCertPool.AppendCertsFromPEM(caBytes); !ok {
+			log.Printf("[DEBUG] 로드 중인 CA 인증서 #%d 내용:\n%s", i+1, string(caBytes))
 			return nil, fmt.Errorf("ID 파일에서 CA 인증서 추가 실패")
 		}
 	}
