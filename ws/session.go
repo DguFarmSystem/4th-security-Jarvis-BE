@@ -15,8 +15,6 @@ var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { retu
 
 // HandleWebSocket은 웹소켓 연결을 처리하고 터미널 세션을 중계합니다.
 func HandleWebSocket(c *gin.Context) {
-	// ... (기존 handleWebSocket 로직과 동일) ...
-	// 아래는 완성된 코드
 	githubUser := c.GetString("username")
 	nodeHost := c.Query("node_host")
 	loginUser := c.Query("login_user")
