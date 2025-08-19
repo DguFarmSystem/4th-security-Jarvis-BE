@@ -20,10 +20,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// --- Teleport 서비스 ---
-
-
-
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
 	Client *client.Client
