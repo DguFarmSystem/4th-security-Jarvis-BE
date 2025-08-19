@@ -18,6 +18,7 @@ import (
 	"github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/trace"
 	"golang.org/x/crypto/ssh"
+	"google.golang.org/grpc"
 )
 
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
@@ -176,7 +177,7 @@ func createClientFromCerts(ctx context.Context, authAddr string, certs *proto.Ce
 
 	// 3. 생성된 Credentials로 새로운 클라이언트를 초기화합니다.
 	impersonatedClient, err := client.New(ctx, client.Config{
-		Addrs:       []string{authAddr},
+		Addrs: []string{authAddr},
 
 		Credentials: []client.Credentials{creds},
 	})
@@ -203,7 +204,6 @@ func (s *Service) refreshClient() error {
 	s.Client = newClient
 	return nil
 }
-
 
 func generateSSHKeyPair() ([]byte, *rsa.PrivateKey, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
