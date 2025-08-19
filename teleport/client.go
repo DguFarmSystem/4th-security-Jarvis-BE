@@ -105,7 +105,6 @@ func (s *Service) GetDynamicImpersonatedClient(ctx context.Context, username str
 		Username:       username,
 		Expires:        time.Now().Add(certConfig.TTL),
 		RouteToCluster: s.getClusterName(ctx),
-		RoleRequests:   userRoles, // 사용자의 모든 역할을 그대로 요청
 		Usage:          proto.UserCertsRequest_All,
 		// 허용된 로그인 목록을 명시적으로 설정
 
