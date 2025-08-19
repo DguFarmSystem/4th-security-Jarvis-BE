@@ -96,6 +96,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 	const clusterName = "mycluster.local"
 	log.Printf("[DEBUG] 단계 1.2: 고정된 클러스터 이름 사용: %s", clusterName)
 	// 2. 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
+
 	log.Println("[DEBUG] 단계 2: Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
 	certs, err := s.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		SSHPublicKey:   pubKeyBytes,
@@ -108,6 +109,10 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		log.Printf("[ERROR] 단계 2: 사용자 인증서 발급 실패: %v", err)
 		return nil, "", fmt.Errorf("%s 사용자의 인증서 발급 실패: %w", username, err)
 	}
+	log.Printf("[DEBUG] 단계 2.1: SSH 인증서(길이: %d), TLS 인증서(길이: %d) 유효성 확인", len(certs.SSH), len(certs.TLS))
+	log.Printf("[DEBUG] SSH Cert 내용:\n%s", string(certs.SSH))
+	log.Printf("[DEBUG] TLS Cert 내용:\n%s", string(certs.TLS))
+
 	log.Println("[DEBUG] 단계 2: 사용자 인증서 발급 성공")
 	// 3. 발급받은 단기 인증서와 생성한 개인키로 새로운 자격증명을 만듭니다.
 	creds := &inMemoryCreds{
