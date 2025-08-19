@@ -36,9 +36,7 @@ type CertificateConfig struct {
 // NewService는 새로운 Teleport 서비스를 생성합니다.
 // tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
 func NewService(cfg *config.Config) (*Service, error) {
-	log.Println("tbot ID 파일을 사용하여 Teleport 클라이언트 생성 시도...")
 	creds := client.LoadIdentityFile(cfg.TbotIdentityFile)
-
 	mainClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},
@@ -179,6 +177,7 @@ func createClientFromCerts(ctx context.Context, authAddr string, certs *proto.Ce
 	// 3. 생성된 Credentials로 새로운 클라이언트를 초기화합니다.
 	impersonatedClient, err := client.New(ctx, client.Config{
 		Addrs:       []string{authAddr},
+
 		Credentials: []client.Credentials{creds},
 	})
 	if err != nil {
@@ -186,6 +185,25 @@ func createClientFromCerts(ctx context.Context, authAddr string, certs *proto.Ce
 	}
 	return impersonatedClient, nil
 }
+
+func (s *Service) refreshClient() error {
+	// ... (기존 로직과 동일, t를 s로 변경) ...
+	creds := client.LoadIdentityFile(s.Cfg.TbotIdentityFile)
+	newClient, err := client.New(context.Background(), client.Config{
+		Addrs:       []string{s.Cfg.TeleportAuthAddr},
+		Credentials: []client.Credentials{creds},
+		DialOpts:    []grpc.DialOption{},
+	})
+	if err != nil {
+		return err
+	}
+	if s.Client != nil {
+		s.Client.Close()
+	}
+	s.Client = newClient
+	return nil
+}
+
 
 func generateSSHKeyPair() ([]byte, *rsa.PrivateKey, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
