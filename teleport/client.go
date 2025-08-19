@@ -48,6 +48,11 @@ func NewService(cfg *config.Config) (*Service, error) {
 		return nil, fmt.Errorf("tbot ID 파일 읽기 실패: %w", err)
 	}
 
+	log.Printf("[DEBUG] ID 파일 전체 구조: %+v", id)
+	for i, caBytes := range id.CACerts.TLS {
+		log.Printf("[DEBUG] 로드된 TLS CA 인증서 #%d:\n%s", i+1, string(caBytes))
+	}
+
 	caCertPool := x509.NewCertPool()
 	for i, caBytes := range id.CACerts.TLS {
 		if ok := caCertPool.AppendCertsFromPEM(caBytes); !ok {
