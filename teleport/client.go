@@ -170,6 +170,7 @@ func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
+/*
 // SSHClientConfig creates an SSH client config.
 func (c *inMemoryCreds) SSHClientConfig() (*ssh.ClientConfig, error) {
 	log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
@@ -202,6 +203,16 @@ func (c *inMemoryCreds) SSHClientConfig() (*ssh.ClientConfig, error) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For production, use a proper host key callback
 	}, nil
 }
+*/
+
+// SSHClientConfig creates an SSH client config.
+func (c *inMemoryCreds) SSHClientConfig() (*ssh.ClientConfig, error) {
+	log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
+	// *** 최종 해결책: 직접적인 TLS 연결이 주 목적이므로, SSH 터널 설정은 필요 없음을 명시합니다. ***
+	// 이렇게 하면 불필요한 SSH 인증서 파싱을 건너뛰어 에러를 방지할 수 있습니다.
+	return nil, trace.NotImplemented("ssh config not required for direct grpc connection")
+}
+
 func (c *inMemoryCreds) Expiry() (time.Time, bool) {
 	return time.Time{}, false
 }
