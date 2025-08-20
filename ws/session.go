@@ -17,6 +17,7 @@ var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { retu
 // HandleWebSocket은 웹소켓 연결을 처리하고 터미널 세션을 중계합니다.
 func HandleWebSocket(c *gin.Context) {
 	githubUser := c.GetString("username")
+	certPath := fmt.Sprintf("/opt/jarvis-service-identity/%s-identity.pem", githubUser)
 	nodeHost := c.Query("node_host")
 	loginUser := c.Query("login_user")
 	if nodeHost == "" || loginUser == "" {
@@ -29,7 +30,7 @@ func HandleWebSocket(c *gin.Context) {
 	sshCmd := exec.Command("sudo", "tsh", "ssh",
 		"-tt", // PTY 강제 할당
 		"--proxy", "openswdev.duckdns.org:3080",
-		"-i", "/opt/machine-id/identity",
+		"-i", certPath,
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 		"--",          // 이후 인수를 원격 커맨드로 전달
 		"bash", "-lc", // login 셸 모드 + 커맨드 실행

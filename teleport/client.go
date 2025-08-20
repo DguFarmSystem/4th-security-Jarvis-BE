@@ -22,17 +22,29 @@ import (
 	"google.golang.org/grpc"
 )
 
-// machineIDIdentityFile은 tbot이 생성하고 관리하는 서비스 계정의 ID 파일 경로입니다.
 const machineIDIdentityFile = "/opt/jarvis-service-identity"
 
-// Service는 Teleport 클라이언트와 관련된 모든 작업을 처리하는 구조체입니다.
+// 사용자 identity 파일 경로 생성 도우미
+func userIdentityPath(username string) string {
+	return fmt.Sprintf("%s/%s-identity.pem", machineIDIdentityFile, username)
+}
+
+// Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
 	Client     *client.Client
 	Cfg        *config.Config
 	caCertPool *x509.CertPool
 }
 
-// NewService는 새로운 Teleport 서비스를 생성하고 초기화합니다.
+// CertificateConfig는 인증서 생성 시 사용할 설정입니다.
+type CertificateConfig struct {
+	TTL           time.Duration
+	AccessLevel   string
+	AllowedLogins []string
+}
+
+// NewService는 새로운 Teleport 서비스를 생성합니다.
+// tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
 func NewService(cfg *config.Config) (*Service, error) {
 	//ID 파일에서 CA 인증서를 읽어와 메모리에 저장합니다.
 	id, err := identityfile.ReadFile(machineIDIdentityFile)
@@ -67,25 +79,22 @@ func NewService(cfg *config.Config) (*Service, error) {
 	log.Printf("Teleport 클러스터(%s)에 성공적으로 연결되었습니다.", cfg.TeleportAuthAddr)
 	return &Service{Client: mainClient, Cfg: cfg, caCertPool: caCertPool}, nil
 }
-
-// Close는 Teleport 클라이언트 연결을 안전하게 종료합니다.
 func (s *Service) Close() {
 	if s.Client != nil {
 		s.Client.Close()
 	}
 }
 
-// GetImpersonatedClient는 특정 사용자를 위해 5분 수명의 단기 인증서를 발급하고,
-// 그 인증서를 사용하는 새로운 임시 Teleport 클라이언트를 생성하여 반환합니다.
+// GetImpersonatedClient 함수는 특정 사용자를 위해 지정된 단기 인증서를 발급하고, 그 인증서를 사용하는 새로운 Teleport 클라이언트를 반환합니다.
 func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
-	//log.Printf("[DEBUG] GetImpersonatedClient 호출됨 (사용자: %s)", username)
+	log.Printf("[DEBUG] GetImpersonatedClient 호출됨 (사용자: %s)", username)
 	// 단기 인증서를 위한 새로운 키 쌍을 메모리에서 생성합니다.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		log.Printf("[ERROR] 임시 키 쌍 생성 실패: %v", err)
 		return nil, "", fmt.Errorf("임시 키 쌍 생성 실패: %w", err)
 	}
-	//log.Println("[DEBUG] 임시 키 쌍 생성 성공")
+	log.Println("[DEBUG] 임시 키 쌍 생성 성공")
 	// 공개키를 OpenSSH authorized_keys 형식으로 변환합니다.
 	sshPubKey, err := ssh.NewPublicKey(pub)
 	if err != nil {
@@ -93,7 +102,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		return nil, "", fmt.Errorf("SSH 공개키 생성 실패: %w", err)
 	}
 	pubKeyBytes := ssh.MarshalAuthorizedKey(sshPubKey)
-	//log.Println("[DEBUG] SSH 공개키 변환 성공")
+	log.Println("[DEBUG] SSH 공개키 변환 성공")
 
 	// TLS 공개키를 위한 PEM 인코딩
 	tlsPubKeyDER, err := x509.MarshalPKIXPublicKey(pub)
@@ -105,10 +114,10 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		Bytes: tlsPubKeyDER,
 	})
 	const clusterName = "mycluster.local"
-	//log.Printf("[DEBUG] 고정된 클러스터 이름 사용: %s", clusterName)
+	log.Printf("[DEBUG] 고정된 클러스터 이름 사용: %s", clusterName)
 	// 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
 
-	//log.Println("[DEBUG] Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
+	log.Println("[DEBUG] Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
 	certs, err := s.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		SSHPublicKey:   pubKeyBytes,
 		TLSPublicKey:   tlsPubKeyPEM,
@@ -120,9 +129,9 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		log.Printf("[ERROR] 사용자 인증서 발급 실패: %v", err)
 		return nil, "", fmt.Errorf("%s 사용자의 인증서 발급 실패: %w", username, err)
 	}
-	//log.Printf("[DEBUG] SSH 인증서(길이: %d), TLS 인증서(길이: %d) 유효성 확인", len(certs.SSH), len(certs.TLS))
+	log.Printf("[DEBUG] SSH 인증서(길이: %d), TLS 인증서(길이: %d) 유효성 확인", len(certs.SSH), len(certs.TLS))
 
-	//log.Println("[DEBUG] 사용자 인증서 발급 성공")
+	log.Println("[DEBUG] 사용자 인증서 발급 성공")
 	// 3. 발급받은 단기 인증서와 생성한 개인키로 새로운 자격증명을 만듭니다.
 	creds := &inMemoryCreds{
 		privateKey: priv,
@@ -130,24 +139,24 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		sshCert:    certs.SSH,
 		caCertPool: s.caCertPool,
 	}
-	//log.Println("[DEBUG] 메모리 내 자격증명(creds) 생성 성공")
+	log.Println("[DEBUG] 메모리 내 자격증명(creds) 생성 성공")
 
-	//log.Println("--- [DEBUG] client.New() 호출 전 최종 creds 확인 ---")
+	log.Println("--- [DEBUG] client.New() 호출 전 최종 creds 확인 ---")
 	if creds.privateKey == nil {
-		//log.Println("[DEBUG] creds.privateKey: nil")
+		log.Println("[DEBUG] creds.privateKey: nil")
 	} else {
-		//log.Println("[DEBUG] creds.privateKey: OK (not nil)")
+		log.Println("[DEBUG] creds.privateKey: OK (not nil)")
 	}
-	//log.Printf("[DEBUG] creds.tlsCert 길이: %d", len(creds.tlsCert))
-	//log.Printf("[DEBUG] creds.sshCert 길이: %d", len(creds.sshCert))
+	log.Printf("[DEBUG] creds.tlsCert 길이: %d", len(creds.tlsCert))
+	log.Printf("[DEBUG] creds.sshCert 길이: %d", len(creds.sshCert))
 	if creds.caCertPool == nil {
-		//log.Println("[DEBUG] creds.caCertPool: nil")
+		log.Println("[DEBUG] creds.caCertPool: nil")
 	} else {
-		//log.Printf("[DEBUG] creds.caCertPool: OK (%d개의 CA 인증서 포함)", len(creds.caCertPool.Subjects()))
+		log.Printf("[DEBUG] creds.caCertPool: OK (%d개의 CA 인증서 포함)", len(creds.caCertPool.Subjects()))
 	}
-	//log.Println("-------------------------------------------------")
+	log.Println("-------------------------------------------------")
 
-	//log.Println("[DEBUG] Impersonated 클라이언트 생성 시작...")
+	log.Println("[DEBUG] Impersonated 클라이언트 생성 시작...")
 	impersonatedClient, err := client.New(ctx, client.Config{
 		Addrs:       []string{s.Cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},
@@ -156,11 +165,10 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		log.Printf("[ERROR] Impersonated 클라이언트 생성 실패: %v", err)
 		return nil, "", fmt.Errorf("%s 사용자를 위한 impersonated 클라이언트 생성 실패: %w", username, err)
 	}
-	//log.Println("[DEBUG] Impersonated 클라이언트 생성 성공")
+	log.Println("[DEBUG] Impersonated 클라이언트 생성 성공")
 	return impersonatedClient, "", nil
 }
 
-// inMemoryCreds는 동적으로 생성된 임시 자격증명을 메모리에만 저장하기 위한 구조체입니다.
 type inMemoryCreds struct {
 	privateKey ed25519.PrivateKey
 	tlsCert    []byte
@@ -168,9 +176,8 @@ type inMemoryCreds struct {
 	caCertPool *x509.CertPool
 }
 
-// TLSConfig는 메모리에 있는 인증서와 키를 사용하여 TLS 연결 설정을 생성합니다.
 func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
-	//log.Println("[DEBUG] inMemoryCreds: TLSConfig() 호출됨")
+	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 호출됨")
 
 	// raw 개인키를 PEM 형식으로 인코딩합니다
 	privDER, err := x509.MarshalPKCS8PrivateKey(c.privateKey)
@@ -189,25 +196,23 @@ func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 		log.Printf("[ERROR] inMemoryCreds: tls.X509KeyPair 생성 실패: %v", err)
 		return nil, trace.Wrap(err)
 	}
-	//log.Println("[DEBUG] inMemoryCreds: TLSConfig() 성공")
+	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 성공")
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      c.caCertPool,
 	}, nil
 }
 
-// SSHClientConfig는 SSH 터널 연결 설정을 생성합니다.
 func (c *inMemoryCreds) SSHClientConfig() (*ssh.ClientConfig, error) {
-	//log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
+	log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
 	return nil, trace.NotImplemented("ssh config not required for direct grpc connection")
 }
 
-// Expiry는 자격증명의 만료 시간을 반환합니다.
 func (c *inMemoryCreds) Expiry() (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// ProvisionTeleportUser는 GitHub 사용자에 해당하는 Teleport 사용자가 없으면 새로 생성합니다.
+// ProvisionTeleportUser는 사용자가 없으면 생성하고, 있으면 넘어갑니다.
 func (s *Service) ProvisionTeleportUser(ctx context.Context, githubUsername string) error {
 	defaultRoles := []string{"basic-user"}
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -244,7 +249,7 @@ func (s *Service) ProvisionTeleportUser(ctx context.Context, githubUsername stri
 	return nil
 }
 
-// isCertExpiredError는 에러 메시지에서 인증서 만료 관련 텍스트를 확인하는 헬퍼 함수입니다.
+// isCertExpiredError와 refreshClient는 비공개 헬퍼 함수로 유지
 func isCertExpiredError(err error) bool {
 	if err == nil {
 		return false
@@ -256,7 +261,6 @@ func isCertExpiredError(err error) bool {
 		strings.Contains(msg, "access denied: expired session")
 }
 
-// refreshClient는 tbot ID 파일로 Teleport 클라이언트를 다시 생성하여 갱신합니다.
 func (s *Service) refreshClient() error {
 	creds := client.LoadIdentityFile(s.Cfg.TbotIdentityFile)
 	newClient, err := client.New(context.Background(), client.Config{
@@ -272,4 +276,41 @@ func (s *Service) refreshClient() error {
 	}
 	s.Client = newClient
 	return nil
+}
+
+// GetUserClientFromIdentity는 이미 파일시스템에 저장된 실제 사용자 identity 파일을 로드하여
+// Teleport 클라이언트를 생성합니다. 이 클라이언트는 API/CRUD 및 리소스 접근 시 모두
+// 실제 사용자로 세션이 남도록 동작합니다.
+func (s *Service) GetUserClientFromIdentity(ctx context.Context, username string) (*client.Client, error) {
+	certPath := userIdentityPath(username)
+	log.Printf("[DEBUG] 사용자 identity 로드 시도 (%s)", certPath)
+
+	creds := client.LoadIdentityFile(certPath)
+
+	// Proxy 주소가 있으면 우선 사용, 없으면 Auth 주소를 사용합니다 (구성 호환용).
+	addr := s.Cfg.TeleportProxyAddr
+	if addr == "" {
+		addr = s.Cfg.TeleportAuthAddr
+	}
+	log.Printf("[DEBUG] 사용자 클라이언트 연결 시도 (addr=%s)", addr)
+
+	userClient, err := client.New(ctx, client.Config{
+		Addrs:       []string{addr},
+		Credentials: []client.Credentials{creds},
+	})
+	if err != nil {
+		log.Printf("[ERROR] 사용자 클라이언트 생성 실패: %v", err)
+		return nil, err
+	}
+
+	// 연결 확인용 ping
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if _, err := userClient.Ping(pingCtx); err != nil {
+		userClient.Close()
+		log.Printf("[ERROR] 사용자 클라이언트 Ping 실패(%s): %v", addr, err)
+		return nil, err
+	}
+	log.Printf("[DEBUG] 사용자 클라이언트 Ping 성공 (%s)", addr)
+	return userClient, nil
 }
