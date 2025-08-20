@@ -30,6 +30,7 @@ func HandleWebSocket(c *gin.Context) {
 		"-tt", // PTY 강제 할당
 		"--proxy", "openswdev.duckdns.org:3080",
 		"-i", "/opt/jarvis-service-identity",
+		fmt.Sprintf("--impersonate=%s", githubUser),
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 		"--",          // 이후 인수를 원격 커맨드로 전달
 		"bash", "-lc", // login 셸 모드 + 커맨드 실행

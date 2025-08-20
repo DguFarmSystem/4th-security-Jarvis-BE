@@ -24,11 +24,6 @@ import (
 
 const machineIDIdentityFile = "/opt/jarvis-service-identity"
 
-// 사용자 identity 파일 경로 생성 도우미
-func userIdentityPath(username string) string {
-	return fmt.Sprintf("%s/%s-identity.pem", machineIDIdentityFile, username)
-}
-
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
 	Client     *client.Client
