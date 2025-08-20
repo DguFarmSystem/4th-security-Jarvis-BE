@@ -36,7 +36,7 @@ func HandleWebSocket(c *gin.Context) {
 	defer os.Remove(tmpfile.Name()) // 함수 종료 시 임시 파일 삭제
 
 	// 2. tsh auth sign 명령으로 단기 인증서 발급 (TTL 1분)
-	authSignCmd := exec.Command("sudo", "tsh", "auth", "sign",
+	authSignCmd := exec.Command("sudo", "tctl", "auth", "sign",
 		"--user", githubUser,
 		"--out", tmpfile.Name(),
 		"--format=ssh",
@@ -58,7 +58,7 @@ func HandleWebSocket(c *gin.Context) {
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 		"--",          // 이후 인수를 원격 커맨드로 전달
 		"bash", "-lc", // login 셸 모드 + 커맨드 실행
-		fmt.Sprintf("echo %s; exec bash", githubUser),
+		fmt.Sprintf("echo %s'; exec bash", githubUser),
 	)
 
 	stdout, err := sshCmd.StdoutPipe()
