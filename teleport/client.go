@@ -22,8 +22,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-// --- Teleport 서비스 ---
-const machineIDIdentityFile = "/opt/jarvis-service-identity" // tbot이 생성한 ID 파일의 일반적인 경로
+const machineIDIdentityFile = "/opt/jarvis-service-identity"
+
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
 	Client     *client.Client
@@ -41,16 +41,10 @@ type CertificateConfig struct {
 // NewService는 새로운 Teleport 서비스를 생성합니다.
 // tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
 func NewService(cfg *config.Config) (*Service, error) {
-
-	// *** 해결책: 시작 시 tbot ID 파일에서 CA 인증서를 읽어와 메모리에 저장합니다. ***
+	//ID 파일에서 CA 인증서를 읽어와 메모리에 저장합니다.
 	id, err := identityfile.ReadFile(machineIDIdentityFile)
 	if err != nil {
 		return nil, fmt.Errorf("tbot ID 파일 읽기 실패: %w", err)
-	}
-
-	log.Printf("[DEBUG] ID 파일 전체 구조: %+v", id)
-	for i, caBytes := range id.CACerts.TLS {
-		log.Printf("[DEBUG] 로드된 TLS CA 인증서 #%d:\n%s", i+1, string(caBytes))
 	}
 
 	caCertPool := x509.NewCertPool()
@@ -89,21 +83,21 @@ func (s *Service) Close() {
 // GetImpersonatedClient 함수는 특정 사용자를 위해 지정된 단기 인증서를 발급하고, 그 인증서를 사용하는 새로운 Teleport 클라이언트를 반환합니다.
 func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
 	log.Printf("[DEBUG] GetImpersonatedClient 호출됨 (사용자: %s)", username)
-	// 1. 단기 인증서를 위한 새로운 키 쌍을 메모리에서 생성합니다.
+	// 단기 인증서를 위한 새로운 키 쌍을 메모리에서 생성합니다.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		log.Printf("[ERROR] 단계 1: 임시 키 쌍 생성 실패: %v", err)
+		log.Printf("[ERROR] 임시 키 쌍 생성 실패: %v", err)
 		return nil, "", fmt.Errorf("임시 키 쌍 생성 실패: %w", err)
 	}
-	log.Println("[DEBUG] 단계 1: 임시 키 쌍 생성 성공")
+	log.Println("[DEBUG] 임시 키 쌍 생성 성공")
 	// 공개키를 OpenSSH authorized_keys 형식으로 변환합니다.
 	sshPubKey, err := ssh.NewPublicKey(pub)
 	if err != nil {
-		log.Printf("[ERROR] 단계 1.1: SSH 공개키 변환 실패: %v", err)
+		log.Printf("[ERROR] SSH 공개키 변환 실패: %v", err)
 		return nil, "", fmt.Errorf("SSH 공개키 생성 실패: %w", err)
 	}
 	pubKeyBytes := ssh.MarshalAuthorizedKey(sshPubKey)
-	log.Println("[DEBUG] 단계 1.1: SSH 공개키 변환 성공")
+	log.Println("[DEBUG] SSH 공개키 변환 성공")
 
 	// TLS 공개키를 위한 PEM 인코딩
 	tlsPubKeyDER, err := x509.MarshalPKIXPublicKey(pub)
@@ -115,10 +109,10 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		Bytes: tlsPubKeyDER,
 	})
 	const clusterName = "mycluster.local"
-	log.Printf("[DEBUG] 단계 1.2: 고정된 클러스터 이름 사용: %s", clusterName)
-	// 2. 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
+	log.Printf("[DEBUG] 고정된 클러스터 이름 사용: %s", clusterName)
+	// 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
 
-	log.Println("[DEBUG] 단계 2: Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
+	log.Println("[DEBUG] Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
 	certs, err := s.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		SSHPublicKey:   pubKeyBytes,
 		TLSPublicKey:   tlsPubKeyPEM,
@@ -127,14 +121,12 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		RouteToCluster: clusterName,
 	})
 	if err != nil {
-		log.Printf("[ERROR] 단계 2: 사용자 인증서 발급 실패: %v", err)
+		log.Printf("[ERROR] 사용자 인증서 발급 실패: %v", err)
 		return nil, "", fmt.Errorf("%s 사용자의 인증서 발급 실패: %w", username, err)
 	}
-	log.Printf("[DEBUG] 단계 2.1: SSH 인증서(길이: %d), TLS 인증서(길이: %d) 유효성 확인", len(certs.SSH), len(certs.TLS))
-	log.Printf("[DEBUG] SSH Cert 내용:\n%s", string(certs.SSH))
-	log.Printf("[DEBUG] TLS Cert 내용:\n%s", string(certs.TLS))
+	log.Printf("[DEBUG] SSH 인증서(길이: %d), TLS 인증서(길이: %d) 유효성 확인", len(certs.SSH), len(certs.TLS))
 
-	log.Println("[DEBUG] 단계 2: 사용자 인증서 발급 성공")
+	log.Println("[DEBUG] 사용자 인증서 발급 성공")
 	// 3. 발급받은 단기 인증서와 생성한 개인키로 새로운 자격증명을 만듭니다.
 	creds := &inMemoryCreds{
 		privateKey: priv,
@@ -142,7 +134,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		sshCert:    certs.SSH,
 		caCertPool: s.caCertPool,
 	}
-	log.Println("[DEBUG] 단계 3: 메모리 내 자격증명(creds) 생성 성공")
+	log.Println("[DEBUG] 메모리 내 자격증명(creds) 생성 성공")
 
 	log.Println("--- [DEBUG] client.New() 호출 전 최종 creds 확인 ---")
 	if creds.privateKey == nil {
@@ -159,22 +151,19 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 	}
 	log.Println("-------------------------------------------------")
 
-	log.Println("[DEBUG] 단계 4: Impersonated 클라이언트 생성 시작...")
+	log.Println("[DEBUG] Impersonated 클라이언트 생성 시작...")
 	impersonatedClient, err := client.New(ctx, client.Config{
 		Addrs:       []string{s.Cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},
 	})
 	if err != nil {
-		log.Printf("[ERROR] 단계 4: Impersonated 클라이언트 생성 실패: %v", err)
+		log.Printf("[ERROR] Impersonated 클라이언트 생성 실패: %v", err)
 		return nil, "", fmt.Errorf("%s 사용자를 위한 impersonated 클라이언트 생성 실패: %w", username, err)
 	}
-	log.Println("[DEBUG] 단계 4: Impersonated 클라이언트 생성 성공")
+	log.Println("[DEBUG] Impersonated 클라이언트 생성 성공")
 	return impersonatedClient, "", nil
 }
 
-// inMemoryCreds is a custom struct that holds credentials in memory
-// and implements the client.Credentials interface. This avoids issues with
-// library version mismatches.
 type inMemoryCreds struct {
 	privateKey ed25519.PrivateKey
 	tlsCert    []byte
@@ -182,11 +171,10 @@ type inMemoryCreds struct {
 	caCertPool *x509.CertPool
 }
 
-// TLSConfig creates a valid *tls.Config from the in-memory key and cert.
 func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 호출됨")
 
-	// *** 해결책: "날것(raw)" 개인키를 PEM 형식으로 인코딩합니다. ***
+	// raw 개인키를 PEM 형식으로 인코딩합니다
 	privDER, err := x509.MarshalPKCS8PrivateKey(c.privateKey)
 	if err != nil {
 		log.Printf("[ERROR] inMemoryCreds: 개인키를 DER 형식으로 변환 실패: %v", err)
@@ -210,46 +198,8 @@ func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 	}, nil
 }
 
-/*
-// SSHClientConfig creates an SSH client config.
 func (c *inMemoryCreds) SSHClientConfig() (*ssh.ClientConfig, error) {
 	log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
-	signer, err := ssh.NewSignerFromKey(c.privateKey)
-	if err != nil {
-		log.Printf("[ERROR] inMemoryCreds: ssh.NewSignerFromKey 생성 실패: %v", err)
-		return nil, trace.Wrap(err)
-	}
-	// *** 최종 해결책: ssh.ParseCertificate 대신 하위 호환성이 높은 ssh.ParsePublicKey를 사용합니다. ***
-	pubKey, err := ssh.ParsePublicKey(c.sshCert)
-	if err != nil {
-		log.Printf("[ERROR] inMemoryCreds: SSH 인증서 파싱 실패: %v", err)
-		return nil, trace.Wrap(err, "failed to parse ssh public key from certificate bytes")
-	}
-	// 파싱된 키가 실제 ssh.Certificate 타입인지 확인(타입 단언)합니다.
-	parsedCert, ok := pubKey.(*ssh.Certificate)
-	if !ok {
-		log.Println("[ERROR] inMemoryCreds: 파싱된 공개키가 SSH 인증서 타입이 아님")
-		return nil, trace.BadParameter("parsed public key is not a valid ssh certificate")
-	}
-	// 파싱된 인증서 객체를 사용하여 CertSigner를 생성합니다.
-	certSigner, err := ssh.NewCertSigner(parsedCert, signer)
-	if err != nil {
-		log.Printf("[ERROR] inMemoryCreds: ssh.NewCertSigner 생성 실패: %v", err)
-		return nil, trace.Wrap(err)
-	}
-	log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 성공")
-	return &ssh.ClientConfig{
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(certSigner)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For production, use a proper host key callback
-	}, nil
-}
-*/
-
-// SSHClientConfig creates an SSH client config.
-func (c *inMemoryCreds) SSHClientConfig() (*ssh.ClientConfig, error) {
-	log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
-	// *** 최종 해결책: 직접적인 TLS 연결이 주 목적이므로, SSH 터널 설정은 필요 없음을 명시합니다. ***
-	// 이렇게 하면 불필요한 SSH 인증서 파싱을 건너뛰어 에러를 방지할 수 있습니다.
 	return nil, trace.NotImplemented("ssh config not required for direct grpc connection")
 }
 
@@ -259,8 +209,6 @@ func (c *inMemoryCreds) Expiry() (time.Time, bool) {
 
 // ProvisionTeleportUser는 사용자가 없으면 생성하고, 있으면 넘어갑니다.
 func (s *Service) ProvisionTeleportUser(ctx context.Context, githubUsername string) error {
-	// ... (기존 ProvisionTeleportUser 로직과 동일, t를 s로 변경) ...
-	// 아래는 완성된 코드
 	defaultRoles := []string{"basic-user"}
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -298,7 +246,6 @@ func (s *Service) ProvisionTeleportUser(ctx context.Context, githubUsername stri
 
 // isCertExpiredError와 refreshClient는 비공개 헬퍼 함수로 유지
 func isCertExpiredError(err error) bool {
-	// ... (기존 로직과 동일) ...
 	if err == nil {
 		return false
 	}
@@ -310,7 +257,6 @@ func isCertExpiredError(err error) bool {
 }
 
 func (s *Service) refreshClient() error {
-	// ... (기존 로직과 동일, t를 s로 변경) ...
 	creds := client.LoadIdentityFile(s.Cfg.TbotIdentityFile)
 	newClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{s.Cfg.TeleportAuthAddr},
