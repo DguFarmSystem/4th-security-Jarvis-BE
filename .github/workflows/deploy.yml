@@ -54,7 +54,7 @@ jobs:
             echo "Cleaning up bot from previous deployment..."
             docker exec teleport-daemon tctl bots rm jarvis-bot || true
 
-            BOT_JOIN_TOKEN=$(docker exec teleport-daemon tctl bots add jarvis-bot --roles=cert-admin-role,web-terminal-bot-role,editor,basic-user,access,api-impersonator,teleport-event-handler --ttl=5m | grep 'The bot token: ' | awk '{print $4}')
+            BOT_JOIN_TOKEN=$(docker exec teleport-daemon tctl bots add jarvis-bot --roles=editor,teleport-event-handler --ttl=5m | grep 'The bot token: ' | awk '{print $4}')
             
             if [ -z "$BOT_JOIN_TOKEN" ]; then
               echo "Error: Failed to generate or extract bot join token."

@@ -41,17 +41,17 @@ func NewGeminiService(ctx context.Context, cfg *config.Config) (*GeminiService, 
 
 // 세션 내용을 받아 Gemini API로 분석 요청
 func (s *GeminiService) AnalyzeTranscript(ctx context.Context, transcript string) (*Analysis, error) {
-	log.Printf("[DEBUG] AnalyzeTranscript 시작. 수신된 Transcript 길이: %d", len(transcript))
+	//log.Printf("[DEBUG] AnalyzeTranscript 시작. 수신된 Transcript 길이: %d", len(transcript))
 	if len(transcript) == 0 {
 		log.Println("[WARN] Transcript 내용이 비어있어 분석을 건너뜁니다.")
 		return &Analysis{Summary: "입력된 명령어가 없습니다."}, nil // 비어있는 경우 에러 대신 기본값 반환
 	}
-	log.Printf("[DEBUG] Gemini 사용 모델: %s", s.model)
+	//log.Printf("[DEBUG] Gemini 사용 모델: %s", s.model)
 	model := s.client.GenerativeModel(s.model)
-	// 3. API에 전달될 최종 프롬프트 확인
+
 	finalPrompt := buildPrompt(transcript)
-	// 프롬프트가 너무 길 경우, 일부만 로깅하여 로그가 과도하게 길어지는 것을 방지
-	log.Printf("[DEBUG] 생성된 최종 프롬프트 (최대 200자): %.200s...", finalPrompt)
+
+	// log.Printf("[DEBUG] 생성된 최종 프롬프트 (최대 200자): %.20s...", finalPrompt)
 	prompt := genai.Text(finalPrompt)
 
 	cs := model.StartChat()
