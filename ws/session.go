@@ -36,7 +36,10 @@ func HandleWebSocket(c *gin.Context) {
 	defer os.Remove(tmpfile.Name()) // 함수 종료 시 임시 파일 삭제
 
 	// 2. tsh auth sign 명령으로 단기 인증서 발급 (TTL 1분)
-	authSignCmd := exec.Command("sudo", "tctl", "auth", "sign",
+	authSignCmd := exec.Command("sudo", "tctl",
+		"--auth-server=openswdev.duckdns.org:3080",
+		"--identity=/opt/jarvis-service-identity",
+		"auth", "sign",
 		"--user", githubUser,
 		"--out", tmpfile.Name(),
 		"--format=ssh",
