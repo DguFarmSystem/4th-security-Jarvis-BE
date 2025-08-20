@@ -43,7 +43,7 @@ func HandleWebSocket(c *gin.Context) {
 		"--user", githubUser,
 		"--out", tmpfile.Name(),
 		"--format=openssh",
-		"--y",
+		"--yes",
 		"--ttl=1m",
 	)
 	if output, err := authSignCmd.CombinedOutput(); err != nil {
