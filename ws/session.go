@@ -1,24 +1,27 @@
 package ws
 
 import (
-	"bytes"
+	"context"
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
-	"regexp"
-	"strings"
+	"teleport-backend/teleport"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/gravitational/teleport/api/client/proto"
+	"golang.org/x/crypto/ssh"
 )
 
 // upgrader는 일반 HTTP 연결을 양방향 통신이 가능한 WebSocket 연결로 전환(업그레이드)합니다.
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
-// HandleWebSocket은 웹소켓 연결을 처리하고 터미널 세션을 중계합니다.
+// HandleWebSocket은 웹소켓 연결을 처리하고 Teleport API 기반 SSH 세션을 중계합니다.
 func HandleWebSocket(c *gin.Context) {
 	githubUser := c.GetString("username")
 	nodeHost := c.Query("node_host")
@@ -28,177 +31,111 @@ func HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	var certID string
-	// 1. 사용자를 위한 단기 인증서를 저장할 고유한 임시 파일 경로 생성
-	outBase := fmt.Sprintf("%s/tsh-cert-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
-	identityFile := fmt.Sprintf("%s/tsh-identity-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
-	tshHome := fmt.Sprintf("%s/tsh-home-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
-
-	if err := os.MkdirAll(tshHome, 0700); err != nil {
-		log.Printf("tsh home 디렉토리 생성 실패: %v", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	// 기존 파일이 남아있다면 삭제
-	_ = os.Remove(outBase)
-	_ = os.Remove(outBase + "-cert.pub")
-	_ = os.Remove(identityFile)
-
-	// 세션 종료 시 정리
-	defer os.Remove(outBase)
-	defer os.Remove(outBase + "-cert.pub")
-	defer os.Remove(identityFile)
-	defer os.RemoveAll(tshHome)
-	defer func() {
-		// 인증서 폐기
-		if certID != "" {
-			log.Printf("세션 종료: 인증서 폐기 중... (ID: %s)", certID)
-			revokeCmd := exec.Command("sudo", "tctl", "auth", "certs", "rm", certID)
-			if output, err := revokeCmd.CombinedOutput(); err != nil {
-				log.Printf("인증서 폐기 실패 (ID: %s): %v, 출력: %s", certID, err, string(output))
-			} else {
-				log.Printf("인증서 폐기 성공 (ID: %s)", certID)
-			}
-		}
-	}()
-
-	log.Printf("사용자 '%s'를 위한 단기 인증서 생성 중... (대상: %s@%s)", githubUser, loginUser, nodeHost)
-
-	// 2. tctl auth sign 명령으로 단기 인증서 발급
-	authSignCmd := exec.Command("sudo", "tctl",
-		"--auth-server=openswdev.duckdns.org:3080",
-		"--identity=/opt/jarvis-service-identity",
-		"auth", "sign",
-		"--user", githubUser,
-		"--out", outBase,
-		"--format=openssh",
-	)
-	var stdoutBuf, stderrBuf bytes.Buffer
-	authSignCmd.Stdout = &stdoutBuf
-	authSignCmd.Stderr = &stderrBuf
-
-	if err := authSignCmd.Run(); err != nil {
-		log.Printf("tctl auth sign 실패: %v, Stderr: %s", err, stderrBuf.String())
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	// 3. 발급된 인증서의 ID를 파싱
-	re := regexp.MustCompile(`(?i)Certificate ID:\s*([0-9a-fA-F-]+)`)
-	matches := re.FindStringSubmatch(stdoutBuf.String())
-	if len(matches) > 1 {
-		certID = matches[1]
-		log.Printf("사용자 '%s'의 인증서가 발급되었습니다 (ID: %s). SSH 세션을 시작합니다.", githubUser, certID)
-	} else {
-		// Certificate ID가 없는 경우 새 포맷 처리: 파일 경로를 fallback ID로 사용
-		certID = "" // Teleport 최신 버전에서는 ID 자체가 출력되지 않음
-		log.Printf("파일 기반 인증서만 사용합니다. 출력: %s", stdoutBuf.String())
-	}
-
-	// 4. 생성된 파일들이 존재하는지 확인
-	if _, err := os.Stat(outBase); err != nil {
-		log.Printf("개인키 파일이 생성되지 않았습니다: %v", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	if _, err := os.Stat(outBase + "-cert.pub"); err != nil {
-		log.Printf("인증서 파일이 생성되지 않았습니다: %v", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	// 5. identity 파일 생성 (개인키 + 인증서를 합친 형태)
-	keyContent, err := os.ReadFile(outBase)
+	// Teleport 서비스 생성
+	svc, err := teleport.NewService(nil) // config.Config 넘겨야 함
 	if err != nil {
-		log.Printf("개인키 파일 읽기 실패: %v", err)
+		log.Printf("Teleport 서비스 초기화 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	defer svc.Close()
 
-	certContent, err := os.ReadFile(outBase + "-cert.pub")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 사용자 단기 인증서 발급 (API 방식)
+	impersonatedClient, _, err := svc.GetImpersonatedClient(ctx, githubUser)
 	if err != nil {
-		log.Printf("인증서 파일 읽기 실패: %v", err)
+		log.Printf("임시 사용자 인증서 발급 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
+	defer impersonatedClient.Close()
 
-	// identity 파일 형식: 개인키 + 개행 + 인증서
-	var identityBuilder strings.Builder
-	identityBuilder.Write(keyContent)
-	if !bytes.HasSuffix(keyContent, []byte("\n")) {
-		identityBuilder.WriteString("\n")
-	}
-	identityBuilder.Write(certContent)
-
-	err = os.WriteFile(identityFile, []byte(identityBuilder.String()), 0600)
+	// SSH 키/인증서 준비
+	pub, priv, err := generateSSHKeyPair()
 	if err != nil {
-		log.Printf("identity 파일 생성 실패: %v", err)
+		log.Printf("SSH 키 쌍 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	certs, err := impersonatedClient.GenerateUserCerts(ctx, proto.UserCertsRequest{
+		SSHPublicKey:   pub,
+		Username:       githubUser,
+		Expires:        time.Now().Add(5 * time.Minute).UTC(),
+		RouteToCluster: "mycluster.local", // 실제 cluster name으로 변경
+	})
+	if err != nil {
+		log.Printf("SSH 인증서 발급 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("identity 파일 생성 완료: %s", identityFile)
-
-	// 6. tsh login으로 세션 먼저 생성
-	log.Printf("tsh login으로 세션 생성")
-	loginCmd := exec.Command("sudo", "tsh", "login",
-		"--proxy=openswdev.duckdns.org:3080",
-		"--identity="+identityFile,
-		githubUser,
-	)
-
-	// 각 명령마다 독립적인 tsh home 사용
-	loginEnv := append(os.Environ(),
-		"TSH_HOME="+tshHome,
-		"TELEPORT_HOME="+tshHome,
-	)
-	loginCmd.Env = loginEnv
-
-	var loginOut, loginErr bytes.Buffer
-	loginCmd.Stdout = &loginOut
-	loginCmd.Stderr = &loginErr
-
-	if err := loginCmd.Run(); err != nil {
-		log.Printf("tsh login 실패: %v", err)
-		log.Printf("Login Stdout: %s", loginOut.String())
-		log.Printf("Login Stderr: %s", loginErr.String())
+	// SSH signer 생성
+	signer, err := sshSignerFromKeyAndCert(priv, certs.SSH)
+	if err != nil {
+		log.Printf("SSH signer 생성 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("tsh login 성공: %s", loginOut.String())
+	sshConfig := &ssh.ClientConfig{
+		User:            githubUser,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: CA 검증으로 교체 가능
+		Timeout:         10 * time.Second,
+	}
 
-	// 7. tsh ssh 명령으로 연결
-	sshCmd := exec.Command("sudo", "tsh", "ssh",
-		"-tt", // PTY 강제 할당
-		"--proxy", "openswdev.duckdns.org:3080",
-		"--identity", identityFile, // 통합 identity 파일 사용
-		"--insecure",
-		fmt.Sprintf("%s@%s", githubUser, nodeHost),
-		"bash", "-l",
-	)
+	// 노드에 SSH 연결 (Teleport proxy 3022 또는 직접 노드 주소)
+	// Teleport proxy 서비스는 기본적으로 3022 포트에서 SSH 연결을 프록시하므로, 노드의 22번 포트 대신 3022 포트에 연결합니다.
+	target := fmt.Sprintf("%s:3022", nodeHost)
+	conn, err := ssh.Dial("tcp", target, sshConfig)
+	if err != nil {
+		log.Printf("SSH 연결 실패 (%s): %v", target, err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
 
-	sshCmd.Env = loginEnv
+	session, err := conn.NewSession()
+	if err != nil {
+		log.Printf("SSH 세션 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	defer session.Close()
 
-	stdout, err := sshCmd.StdoutPipe()
+	stdout, err := session.StdoutPipe()
 	if err != nil {
 		log.Printf("StdoutPipe 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	stdin, err := sshCmd.StdinPipe()
+	stdin, err := session.StdinPipe()
 	if err != nil {
 		log.Printf("StdinPipe 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	sshCmd.Stderr = os.Stderr
 
-	if err := sshCmd.Start(); err != nil {
-		log.Printf("SSH Command 시작 실패: %v", err)
+	// PTY 할당 및 bash 실행
+	modes := ssh.TerminalModes{
+		ssh.ECHO:          1,
+		ssh.TTY_OP_ISPEED: 14400,
+		ssh.TTY_OP_OSPEED: 14400,
+	}
+	if err := session.RequestPty("xterm", 80, 40, modes); err != nil {
+		log.Printf("PTY 요청 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	defer sshCmd.Process.Kill()
+	if err := session.Shell(); err != nil {
+		log.Printf("bash 실행 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
 
+	// WebSocket 업그레이드
 	feConn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("웹소켓 업그레이드 실패: %v", err)
@@ -208,12 +145,15 @@ func HandleWebSocket(c *gin.Context) {
 
 	log.Println("프론트엔드와 WebSocket 연결 성공. 데이터 중계를 시작합니다.")
 
+	// SSH → WebSocket
 	go func() {
 		buf := make([]byte, 32*1024)
 		for {
 			n, err := stdout.Read(buf)
 			if err != nil {
-				log.Printf("SSH stdout 읽기 실패: %v", err)
+				if err != io.EOF {
+					log.Printf("SSH stdout 읽기 실패: %v", err)
+				}
 				return
 			}
 			if err := feConn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
@@ -223,6 +163,7 @@ func HandleWebSocket(c *gin.Context) {
 		}
 	}()
 
+	// WebSocket → SSH
 	for {
 		_, msg, err := feConn.ReadMessage()
 		if err != nil {
@@ -234,4 +175,45 @@ func HandleWebSocket(c *gin.Context) {
 			return
 		}
 	}
+}
+
+// generateSSHKeyPair는 Ed25519 SSH 키 쌍을 생성하고,
+// 공개키는 SSH authorized_keys 형식으로, 개인키는 PEM 인코딩된 PKCS8 형식으로 반환합니다.
+func generateSSHKeyPair() ([]byte, ed25519.PrivateKey, error) {
+	pubKey, privKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 공개키 SSH authorized_keys 형식으로 변환
+	sshPubKey, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	pubBytes := ssh.MarshalAuthorizedKey(sshPubKey)
+
+	// 개인키 PEM 인코딩 (PKCS8)
+	privBytes, err := x509.MarshalPKCS8PrivateKey(privKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	privPem := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: privBytes,
+	})
+
+	return pubBytes, privKey, nil
+}
+
+// sshSignerFromKeyAndCert는 ed25519 개인키와 SSH 인증서 바이트를 받아 signer를 만듭니다.
+func sshSignerFromKeyAndCert(priv ed25519.PrivateKey, cert []byte) (ssh.Signer, error) {
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		return nil, err
+	}
+	certPubKey, err := ssh.ParsePublicKey(cert)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewCertSigner(certPubKey.(*ssh.Certificate), signer)
 }
