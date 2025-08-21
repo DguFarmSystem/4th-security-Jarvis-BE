@@ -192,16 +192,6 @@ func generateSSHKeyPair() ([]byte, ed25519.PrivateKey, error) {
 	}
 	pubBytes := ssh.MarshalAuthorizedKey(sshPubKey)
 
-	// 개인키 PEM 인코딩 (PKCS8)
-	privBytes, err := x509.MarshalPKCS8PrivateKey(privKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	privPem := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: privBytes,
-	})
-
 	return pubBytes, privKey, nil
 }
 
