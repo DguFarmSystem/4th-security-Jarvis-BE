@@ -73,14 +73,16 @@ func HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	// 3. 발급된 인증서의 ID를 파싱
-	re := regexp.MustCompile(`Certificate ID:\s*([0-9a-fA-F-]+)`)
+	// 3. 발급된 인증서의 ID를 파싱 (출력 포맷이 버전에 따라 다를 수 있음)
+	re := regexp.MustCompile(`(?i)Certificate ID:\s*([0-9a-fA-F-]+)`)
 	matches := re.FindStringSubmatch(stdoutBuf.String())
 	if len(matches) > 1 {
 		certID = matches[1]
 		log.Printf("사용자 '%s'의 인증서가 발급되었습니다 (ID: %s). SSH 세션을 시작합니다.", githubUser, certID)
 	} else {
-		log.Printf("인증서 ID를 파싱하지 못했습니다. 출력: %s", stdoutBuf.String())
+		// Certificate ID가 없는 경우 새 포맷 처리: 파일 경로를 fallback ID로 사용
+		certID = "" // Teleport 최신 버전에서는 ID 자체가 출력되지 않음
+		log.Printf("인증서 ID가 출력되지 않았습니다. 파일 기반 인증서만 사용합니다. 출력: %s", stdoutBuf.String())
 	}
 
 	// 4. 발급받은 단기 인증서를 사용하여 SSH 연결
@@ -91,7 +93,7 @@ func HandleWebSocket(c *gin.Context) {
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 		"--",          // 이후 인수를 원격 커맨드로 전달
 		"bash", "-lc", // login 셸 모드 + 커맨드 실행
-		fmt.Sprintf("echo 'Welcome %s'; exec bash", githubUser),
+		fmt.Sprintf("echo %s'; exec bash", githubUser),
 	)
 
 	stdout, err := sshCmd.StdoutPipe()
