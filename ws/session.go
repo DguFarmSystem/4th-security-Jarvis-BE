@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -30,14 +31,17 @@ func HandleWebSocket(c *gin.Context) {
 	var certID string
 	// 1. 사용자를 위한 단기 인증서를 저장할 고유한 임시 파일 경로 생성 (파일은 생성하지 않음)
 	outBase := fmt.Sprintf("%s/tsh-cert-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
+	identityFile := fmt.Sprintf("%s/tsh-identity-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
 
 	// 기존 파일이 남아있다면 삭제 (tctl openssh 포맷은 <out>와 <out>-cert.pub 두 파일을 생성)
 	_ = os.Remove(outBase)
 	_ = os.Remove(outBase + "-cert.pub")
+	_ = os.Remove(identityFile)
 
 	// 세션 종료 시 정리
 	defer os.Remove(outBase)
 	defer os.Remove(outBase + "-cert.pub")
+	defer os.Remove(identityFile)
 	defer func() {
 		// 인증서 폐기
 		if certID != "" {
@@ -85,15 +89,58 @@ func HandleWebSocket(c *gin.Context) {
 		log.Printf("인증서 ID가 출력되지 않았습니다. 파일 기반 인증서만 사용합니다. 출력: %s", stdoutBuf.String())
 	}
 
-	// 4. 발급받은 단기 인증서를 사용하여 SSH 연결
+	// 4. 생성된 파일들이 존재하는지 확인
+	if _, err := os.Stat(outBase); err != nil {
+		log.Printf("개인키 파일이 생성되지 않았습니다: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	if _, err := os.Stat(outBase + "-cert.pub"); err != nil {
+		log.Printf("인증서 파일이 생성되지 않았습니다: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	// 5. identity 파일 생성 (개인키 + 인증서를 합친 형태)
+	keyContent, err := os.ReadFile(outBase)
+	if err != nil {
+		log.Printf("개인키 파일 읽기 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	certContent, err := os.ReadFile(outBase + "-cert.pub")
+	if err != nil {
+		log.Printf("인증서 파일 읽기 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	// identity 파일 형식: 개인키 + 개행 + 인증서
+	var identityBuilder strings.Builder
+	identityBuilder.Write(keyContent)
+	if !bytes.HasSuffix(keyContent, []byte("\n")) {
+		identityBuilder.WriteString("\n")
+	}
+	identityBuilder.Write(certContent)
+
+	err = os.WriteFile(identityFile, []byte(identityBuilder.String()), 0600)
+	if err != nil {
+		log.Printf("identity 파일 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("identity 파일 생성 완료: %s", identityFile)
+
+	// 6. tsh ssh 명령으로 연결
 	sshCmd := exec.Command("sudo", "tsh", "ssh",
 		"-tt", // PTY 강제 할당
 		"--proxy", "openswdev.duckdns.org:3080",
-		"-i", outBase, // 생성된 단기 인증서 사용
+		"--identity", identityFile, // 통합 identity 파일 사용
+		"--insecure",
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
-		"--",          // 이후 인수를 원격 커맨드로 전달
-		"bash", "-lc", // login 셸 모드 + 커맨드 실행
-		fmt.Sprintf("echo %s'; exec bash", githubUser),
+		"bash", "-l",
 	)
 
 	stdout, err := sshCmd.StdoutPipe()
