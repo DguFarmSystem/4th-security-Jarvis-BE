@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"teleport-backend/config"
 	"teleport-backend/teleport"
 	"time"
 
@@ -30,7 +31,8 @@ func HandleWebSocket(c *gin.Context) {
 	}
 
 	// Teleport 서비스 생성
-	svc, err := teleport.NewService(nil) // config.Config 넘겨야 함
+	cfg := config.LoadConfig()
+	svc, err := teleport.NewService(cfg)
 	if err != nil {
 		log.Printf("Teleport 서비스 초기화 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
