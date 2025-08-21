@@ -20,15 +20,18 @@ type Handler struct {
 	TeleportService *teleport.Service
 }
 
+// NewHandler는 인증 핸들러 구조체를 생성하고 초기화합니다.
 func NewHandler(cfg *config.Config, ts *teleport.Service) *Handler {
 	return &Handler{Cfg: cfg, TeleportService: ts}
 }
 
+// HandleGitHubLogin은 사용자를 GitHub 인증 페이지로 리디렉션하여 로그인 절차를 시작합니다.
 func (h *Handler) HandleGitHubLogin(c *gin.Context) {
 	url := h.Cfg.GitHubOAuthConfig.AuthCodeURL("random-state-string", oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("scope", "read:org"))
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
+// HandleGitHubCallback은 GitHub로부터 인증 코드를 받아 사용자 정보를 처리하고 JWT를 발급합니다.
 func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 	code := c.Query("code")
 	oauthToken, err := h.Cfg.GitHubOAuthConfig.Exchange(context.Background(), code)
