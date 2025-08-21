@@ -82,14 +82,14 @@ func (s *Service) Close() {
 
 // GetImpersonatedClient 함수는 특정 사용자를 위해 지정된 단기 인증서를 발급하고, 그 인증서를 사용하는 새로운 Teleport 클라이언트를 반환합니다.
 func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
-	log.Printf("[DEBUG] GetImpersonatedClient 호출됨 (사용자: %s)", username)
+	//log.Printf("[DEBUG] GetImpersonatedClient 호출됨 (사용자: %s)", username)
 	// 단기 인증서를 위한 새로운 키 쌍을 메모리에서 생성합니다.
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		log.Printf("[ERROR] 임시 키 쌍 생성 실패: %v", err)
 		return nil, "", fmt.Errorf("임시 키 쌍 생성 실패: %w", err)
 	}
-	log.Println("[DEBUG] 임시 키 쌍 생성 성공")
+	//log.Println("[DEBUG] 임시 키 쌍 생성 성공")
 	// 공개키를 OpenSSH authorized_keys 형식으로 변환합니다.
 	sshPubKey, err := ssh.NewPublicKey(pub)
 	if err != nil {
@@ -97,7 +97,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		return nil, "", fmt.Errorf("SSH 공개키 생성 실패: %w", err)
 	}
 	pubKeyBytes := ssh.MarshalAuthorizedKey(sshPubKey)
-	log.Println("[DEBUG] SSH 공개키 변환 성공")
+	//log.Println("[DEBUG] SSH 공개키 변환 성공")
 
 	// TLS 공개키를 위한 PEM 인코딩
 	tlsPubKeyDER, err := x509.MarshalPKIXPublicKey(pub)
@@ -109,10 +109,10 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		Bytes: tlsPubKeyDER,
 	})
 	const clusterName = "mycluster.local"
-	log.Printf("[DEBUG] 고정된 클러스터 이름 사용: %s", clusterName)
+	//log.Printf("[DEBUG] 고정된 클러스터 이름 사용: %s", clusterName)
 	// 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
 
-	log.Println("[DEBUG] Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
+	//log.Println("[DEBUG] Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
 	certs, err := s.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		SSHPublicKey:   pubKeyBytes,
 		TLSPublicKey:   tlsPubKeyPEM,
@@ -124,9 +124,9 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		log.Printf("[ERROR] 사용자 인증서 발급 실패: %v", err)
 		return nil, "", fmt.Errorf("%s 사용자의 인증서 발급 실패: %w", username, err)
 	}
-	log.Printf("[DEBUG] SSH 인증서(길이: %d), TLS 인증서(길이: %d) 유효성 확인", len(certs.SSH), len(certs.TLS))
+	//log.Printf("[DEBUG] SSH 인증서(길이: %d), TLS 인증서(길이: %d) 유효성 확인", len(certs.SSH), len(certs.TLS))
 
-	log.Println("[DEBUG] 사용자 인증서 발급 성공")
+	//log.Println("[DEBUG] 사용자 인증서 발급 성공")
 	// 3. 발급받은 단기 인증서와 생성한 개인키로 새로운 자격증명을 만듭니다.
 	creds := &inMemoryCreds{
 		privateKey: priv,
@@ -134,24 +134,24 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		sshCert:    certs.SSH,
 		caCertPool: s.caCertPool,
 	}
-	log.Println("[DEBUG] 메모리 내 자격증명(creds) 생성 성공")
+	//log.Println("[DEBUG] 메모리 내 자격증명(creds) 생성 성공")
 
-	log.Println("--- [DEBUG] client.New() 호출 전 최종 creds 확인 ---")
+	//log.Println("--- [DEBUG] client.New() 호출 전 최종 creds 확인 ---")
 	if creds.privateKey == nil {
-		log.Println("[DEBUG] creds.privateKey: nil")
+		//log.Println("[DEBUG] creds.privateKey: nil")
 	} else {
-		log.Println("[DEBUG] creds.privateKey: OK (not nil)")
+		//log.Println("[DEBUG] creds.privateKey: OK (not nil)")
 	}
-	log.Printf("[DEBUG] creds.tlsCert 길이: %d", len(creds.tlsCert))
-	log.Printf("[DEBUG] creds.sshCert 길이: %d", len(creds.sshCert))
+	//log.Printf("[DEBUG] creds.tlsCert 길이: %d", len(creds.tlsCert))
+	//log.Printf("[DEBUG] creds.sshCert 길이: %d", len(creds.sshCert))
 	if creds.caCertPool == nil {
-		log.Println("[DEBUG] creds.caCertPool: nil")
+		//log.Println("[DEBUG] creds.caCertPool: nil")
 	} else {
-		log.Printf("[DEBUG] creds.caCertPool: OK (%d개의 CA 인증서 포함)", len(creds.caCertPool.Subjects()))
+		//log.Printf("[DEBUG] creds.caCertPool: OK (%d개의 CA 인증서 포함)", len(creds.caCertPool.Subjects()))
 	}
 	log.Println("-------------------------------------------------")
 
-	log.Println("[DEBUG] Impersonated 클라이언트 생성 시작...")
+	//log.Println("[DEBUG] Impersonated 클라이언트 생성 시작...")
 	impersonatedClient, err := client.New(ctx, client.Config{
 		Addrs:       []string{s.Cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},
@@ -160,7 +160,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		log.Printf("[ERROR] Impersonated 클라이언트 생성 실패: %v", err)
 		return nil, "", fmt.Errorf("%s 사용자를 위한 impersonated 클라이언트 생성 실패: %w", username, err)
 	}
-	log.Println("[DEBUG] Impersonated 클라이언트 생성 성공")
+	//log.Println("[DEBUG] Impersonated 클라이언트 생성 성공")
 	return impersonatedClient, "", nil
 }
 

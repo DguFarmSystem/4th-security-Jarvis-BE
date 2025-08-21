@@ -48,6 +48,7 @@ func main() {
 			"https://jarvis-indol-omega.vercel.app",
 			"http://localhost:5173",
 			"https://openswdev.duckdns.org:3000",
+			"https://4th-security-jarvis.duckdns.org",
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
