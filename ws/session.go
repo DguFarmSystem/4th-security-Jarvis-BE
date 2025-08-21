@@ -62,7 +62,7 @@ func HandleWebSocket(c *gin.Context) {
 		"--auth-server=openswdev.duckdns.org:3080",
 		"--identity=/opt/jarvis-service-identity",
 		"auth", "sign",
-		"--user", loginUser,
+		"--user", githubUser,
 		"--out", outBase,
 		"--format=openssh",
 		"--ttl=1m",
@@ -139,7 +139,7 @@ func HandleWebSocket(c *gin.Context) {
 		"--proxy", "openswdev.duckdns.org:3080",
 		"--identity", identityFile, // 통합 identity 파일 사용
 		"--insecure",
-		fmt.Sprintf("%s@%s", loginUser, nodeHost),
+		fmt.Sprintf("%s@%s", githubUser, nodeHost),
 		"bash", "-l",
 	)
 
