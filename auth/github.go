@@ -25,14 +25,11 @@ func NewHandler(cfg *config.Config, ts *teleport.Service) *Handler {
 }
 
 func (h *Handler) HandleGitHubLogin(c *gin.Context) {
-	// ... (기존 handleGitHubLogin 로직과 동일, githubOAuthConfig -> h.Cfg.GitHubOAuthConfig) ...
 	url := h.Cfg.GitHubOAuthConfig.AuthCodeURL("random-state-string", oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("scope", "read:org"))
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
 func (h *Handler) HandleGitHubCallback(c *gin.Context) {
-	// ... (기존 handleGitHubCallback 로직과 동일, 필요한 부분을 h.Cfg와 h.TeleportService에서 가져옴) ...
-	// 아래는 완성된 코드
 	code := c.Query("code")
 	oauthToken, err := h.Cfg.GitHubOAuthConfig.Exchange(context.Background(), code)
 	if err != nil {

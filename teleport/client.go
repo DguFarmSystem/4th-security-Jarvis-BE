@@ -149,7 +149,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 	} else {
 		//log.Printf("[DEBUG] creds.caCertPool: OK (%d개의 CA 인증서 포함)", len(creds.caCertPool.Subjects()))
 	}
-	log.Println("-------------------------------------------------")
+	//log.Println("-------------------------------------------------")
 
 	//log.Println("[DEBUG] Impersonated 클라이언트 생성 시작...")
 	impersonatedClient, err := client.New(ctx, client.Config{
@@ -172,7 +172,7 @@ type inMemoryCreds struct {
 }
 
 func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
-	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 호출됨")
+	//log.Println("[DEBUG] inMemoryCreds: TLSConfig() 호출됨")
 
 	// raw 개인키를 PEM 형식으로 인코딩합니다
 	privDER, err := x509.MarshalPKCS8PrivateKey(c.privateKey)
@@ -191,7 +191,7 @@ func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 		log.Printf("[ERROR] inMemoryCreds: tls.X509KeyPair 생성 실패: %v", err)
 		return nil, trace.Wrap(err)
 	}
-	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 성공")
+	//log.Println("[DEBUG] inMemoryCreds: TLSConfig() 성공")
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      c.caCertPool,
@@ -199,7 +199,7 @@ func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 }
 
 func (c *inMemoryCreds) SSHClientConfig() (*ssh.ClientConfig, error) {
-	log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
+	//log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
 	return nil, trace.NotImplemented("ssh config not required for direct grpc connection")
 }
 
