@@ -201,7 +201,7 @@ func sshSignerFromKeyAndCert(priv ed25519.PrivateKey, cert []byte) (ssh.Signer, 
 	if err != nil {
 		return nil, err
 	}
-	certPubKey, err := ssh.ParsePublicKey(cert)
+	certPubKey, _, _, _, err := ssh.ParseAuthorizedKey(cert)
 	if err != nil {
 		return nil, err
 	}
