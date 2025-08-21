@@ -29,11 +29,18 @@ func HandleWebSocket(c *gin.Context) {
 	}
 
 	var certID string
-	// 1. 사용자를 위한 단기 인증서를 저장할 고유한 임시 파일 경로 생성 (파일은 생성하지 않음)
+	// 1. 사용자를 위한 단기 인증서를 저장할 고유한 임시 파일 경로 생성
 	outBase := fmt.Sprintf("%s/tsh-cert-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
 	identityFile := fmt.Sprintf("%s/tsh-identity-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
+	tshHome := fmt.Sprintf("%s/tsh-home-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
 
-	// 기존 파일이 남아있다면 삭제 (tctl openssh 포맷은 <out>와 <out>-cert.pub 두 파일을 생성)
+	if err := os.MkdirAll(tshHome, 0700); err != nil {
+		log.Printf("tsh home 디렉토리 생성 실패: %v", err)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	// 기존 파일이 남아있다면 삭제
 	_ = os.Remove(outBase)
 	_ = os.Remove(outBase + "-cert.pub")
 	_ = os.Remove(identityFile)
@@ -42,6 +49,7 @@ func HandleWebSocket(c *gin.Context) {
 	defer os.Remove(outBase)
 	defer os.Remove(outBase + "-cert.pub")
 	defer os.Remove(identityFile)
+	defer os.RemoveAll(tshHome)
 	defer func() {
 		// 인증서 폐기
 		if certID != "" {
@@ -77,7 +85,7 @@ func HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	// 3. 발급된 인증서의 ID를 파싱 (출력 포맷이 버전에 따라 다를 수 있음)
+	// 3. 발급된 인증서의 ID를 파싱
 	re := regexp.MustCompile(`(?i)Certificate ID:\s*([0-9a-fA-F-]+)`)
 	matches := re.FindStringSubmatch(stdoutBuf.String())
 	if len(matches) > 1 {
@@ -86,7 +94,7 @@ func HandleWebSocket(c *gin.Context) {
 	} else {
 		// Certificate ID가 없는 경우 새 포맷 처리: 파일 경로를 fallback ID로 사용
 		certID = "" // Teleport 최신 버전에서는 ID 자체가 출력되지 않음
-		log.Printf("인증서 ID가 출력되지 않았습니다. 파일 기반 인증서만 사용합니다. 출력: %s", stdoutBuf.String())
+		log.Printf("파일 기반 인증서만 사용합니다. 출력: %s", stdoutBuf.String())
 	}
 
 	// 4. 생성된 파일들이 존재하는지 확인
@@ -133,7 +141,36 @@ func HandleWebSocket(c *gin.Context) {
 
 	log.Printf("identity 파일 생성 완료: %s", identityFile)
 
-	// 6. tsh ssh 명령으로 연결
+	// 6. tsh login으로 세션 먼저 생성
+	log.Printf("tsh login으로 세션 생성")
+	loginCmd := exec.Command("sudo", "tsh", "login",
+		"--proxy=openswdev.duckdns.org:3080",
+		"--identity="+identityFile,
+		githubUser,
+	)
+
+	// 각 명령마다 독립적인 tsh home 사용
+	loginEnv := append(os.Environ(),
+		"TSH_HOME="+tshHome,
+		"TELEPORT_HOME="+tshHome,
+	)
+	loginCmd.Env = loginEnv
+
+	var loginOut, loginErr bytes.Buffer
+	loginCmd.Stdout = &loginOut
+	loginCmd.Stderr = &loginErr
+
+	if err := loginCmd.Run(); err != nil {
+		log.Printf("tsh login 실패: %v", err)
+		log.Printf("Login Stdout: %s", loginOut.String())
+		log.Printf("Login Stderr: %s", loginErr.String())
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("tsh login 성공: %s", loginOut.String())
+
+	// 7. tsh ssh 명령으로 연결
 	sshCmd := exec.Command("sudo", "tsh", "ssh",
 		"-tt", // PTY 강제 할당
 		"--proxy", "openswdev.duckdns.org:3080",
@@ -142,6 +179,8 @@ func HandleWebSocket(c *gin.Context) {
 		fmt.Sprintf("%s@%s", githubUser, nodeHost),
 		"bash", "-l",
 	)
+
+	sshCmd.Env = loginEnv
 
 	stdout, err := sshCmd.StdoutPipe()
 	if err != nil {
