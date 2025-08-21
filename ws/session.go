@@ -30,16 +30,14 @@ func HandleWebSocket(c *gin.Context) {
 	var certID string
 	// 1. 사용자를 위한 단기 인증서를 저장할 고유한 임시 파일 경로 생성 (파일은 생성하지 않음)
 	outBase := fmt.Sprintf("%s/tsh-cert-%d-%d", os.TempDir(), os.Getpid(), time.Now().UnixNano())
-	privKeyPath := outBase
-	certPubPath := outBase + "-cert.pub"
 
 	// 기존 파일이 남아있다면 삭제 (tctl openssh 포맷은 <out>와 <out>-cert.pub 두 파일을 생성)
-	_ = os.Remove(privKeyPath)
-	_ = os.Remove(certPubPath)
+	_ = os.Remove(outBase)
+	_ = os.Remove(outBase + "-cert.pub")
 
 	// 세션 종료 시 정리
-	defer os.Remove(privKeyPath)
-	defer os.Remove(certPubPath)
+	defer os.Remove(outBase)
+	defer os.Remove(outBase + "-cert.pub")
 	defer func() {
 		// 인증서 폐기
 		if certID != "" {
@@ -61,7 +59,7 @@ func HandleWebSocket(c *gin.Context) {
 		"--identity=/opt/jarvis-service-identity",
 		"auth", "sign",
 		"--user", githubUser,
-		"--out", privKeyPath,
+		"--out", outBase,
 		"--format=openssh",
 		"--ttl=1m",
 	)
@@ -89,7 +87,7 @@ func HandleWebSocket(c *gin.Context) {
 	sshCmd := exec.Command("sudo", "tsh", "ssh",
 		"-tt", // PTY 강제 할당
 		"--proxy", "openswdev.duckdns.org:3080",
-		"-i", privKeyPath, // 생성된 단기 인증서 사용
+		"-i", outBase, // 생성된 단기 인증서 사용
 		fmt.Sprintf("%s@%s", loginUser, nodeHost),
 		"--",          // 이후 인수를 원격 커맨드로 전달
 		"bash", "-lc", // login 셸 모드 + 커맨드 실행
