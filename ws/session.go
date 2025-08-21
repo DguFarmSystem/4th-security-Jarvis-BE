@@ -58,7 +58,7 @@ func HandleWebSocket(c *gin.Context) {
 		"--auth-server=openswdev.duckdns.org:3080",
 		"--identity=/opt/jarvis-service-identity",
 		"auth", "sign",
-		"--user", githubUser,
+		"--user", loginUser,
 		"--out", outBase,
 		"--format=openssh",
 		"--ttl=1m",
