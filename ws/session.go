@@ -73,7 +73,7 @@ func HandleWebSocket(c *gin.Context) {
 		"--user", githubUser,
 		"--out", outBase,
 		"--format=openssh",
-		"--ttl=1m",
+		"--ttl=30m",
 	)
 	var stdoutBuf, stderrBuf bytes.Buffer
 	authSignCmd.Stdout = &stdoutBuf
