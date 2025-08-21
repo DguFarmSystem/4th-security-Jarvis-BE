@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// upgrader는 일반 HTTP 연결을 양방향 통신이 가능한 WebSocket 연결로 전환(업그레이드)합니다.
 var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 // HandleWebSocket은 웹소켓 연결을 처리하고 터미널 세션을 중계합니다.

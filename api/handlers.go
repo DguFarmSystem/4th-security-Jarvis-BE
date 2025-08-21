@@ -29,6 +29,7 @@ type Handlers struct {
 	HttpClient      *http.Client
 }
 
+// NewHandlers는 API 핸들러 구조체를 생성하고 초기화합니다.
 func NewHandlers(ts *teleport.Service, gs services.Analyzer) *Handlers {
 	return &Handlers{
 		TeleportService: ts,
@@ -37,6 +38,7 @@ func NewHandlers(ts *teleport.Service, gs services.Analyzer) *Handlers {
 	}
 }
 
+// GetUsers는 Teleport에 등록된 모든 사용자 목록을 조회합니다.
 func (h *Handlers) GetUsers(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -63,6 +65,7 @@ func (h *Handlers) GetUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
+// DeleteUser는 특정 Teleport 사용자를 삭제합니다.
 func (h *Handlers) DeleteUser(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -104,6 +107,7 @@ func (h *Handlers) DeleteUser(c *gin.Context) {
 
 }
 
+// UpdateUser는 특정 사용자의 역할(Role) 정보를 업데이트합니다.
 func (h *Handlers) UpdateUser(c *gin.Context) {
 	userToUpdate := c.Param("username")
 	if userToUpdate == "" {
@@ -145,18 +149,18 @@ func (h *Handlers) UpdateUser(c *gin.Context) {
 	// 가져온 사용자 정보에 요청받은 데이터를 적용합니다. (예: 역할 업데이트)
 	user.SetRoles(req.Roles)
 
-	// 7. 변경된 사용자 객체로 업데이트 API를 호출합니다.
+	// 변경된 사용자 객체로 업데이트 API를 호출합니다.
 	_, err = impersonatedClient.UpdateUser(ctx, user)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("사용자 '%s' 업데이트에 실패했습니다: %s", userToUpdate, err.Error())})
 		return
 	}
 
-	// 8. 성공적으로 업데이트되었음을 응답합니다.
 	log.Printf("[UpdateUser] 성공: 사용자 '%s'의 정보가 성공적으로 업데이트되었습니다.", userToUpdate)
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("사용자 '%s'의 정보가 성공적으로 업데이트되었습니다.", userToUpdate)})
 }
 
+// GetRoles는 Teleport에 등록된 모든 역할(Role) 목록을 조회합니다.
 func (h *Handlers) GetRoles(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -182,6 +186,7 @@ func (h *Handlers) GetRoles(c *gin.Context) {
 	c.JSON(http.StatusOK, roles)
 }
 
+// CreateRole은 새로운 Teleport 역할을 생성합니다.
 func (h *Handlers) CreateRole(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -189,7 +194,7 @@ func (h *Handlers) CreateRole(c *gin.Context) {
 		return
 	}
 
-	// 1. 요청 본문(JSON)에서 역할 데이터를 읽어옵니다.
+	// 요청 본문(JSON)에서 역할 데이터를 읽어옵니다.
 	// types.Role은 인터페이스이므로, 구체적인 타입인 RoleV6로 바인딩합니다.
 	var role *types.RoleV6
 	if err := c.ShouldBindJSON(&role); err != nil {
@@ -208,7 +213,6 @@ func (h *Handlers) CreateRole(c *gin.Context) {
 	}
 	defer impersonatedClient.Close()
 
-	//  (1): 두 개의 값을 반환받도록 수정 ---
 	// API가 (types.Role, error)를 반환하므로, createdRole 변수에 결과를 받습니다.
 	createdRole, err := impersonatedClient.CreateRole(ctx, role)
 	if err != nil {
@@ -217,11 +221,11 @@ func (h *Handlers) CreateRole(c *gin.Context) {
 		return
 	}
 
-	//  (2): 성공 시 생성된 객체 자체를 반환 ---
 	log.Printf("[CreateRole] 성공: 역할 '%s'가 생성되었습니다.", createdRole.GetName())
 	c.JSON(http.StatusCreated, createdRole) // 단순 메시지 대신, 생성된 Role 객체를 반환
 }
 
+// UpsertRole은 새로운 역할을 생성하거나 이미 존재하면 업데이트합니다.
 func (h *Handlers) UpsertRole(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -229,7 +233,7 @@ func (h *Handlers) UpsertRole(c *gin.Context) {
 		return
 	}
 
-	// 1. 요청 본문(JSON)에서 역할 데이터를 읽어옵니다.
+	//요청 본문(JSON)에서 역할 데이터를 읽어옵니다.
 	var role *types.RoleV6
 	if err := c.ShouldBindJSON(&role); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "요청 본문(Role)이 잘못되었습니다: " + err.Error()})
@@ -247,7 +251,6 @@ func (h *Handlers) UpsertRole(c *gin.Context) {
 	}
 	defer impersonatedClient.Close()
 
-	//  (1): 두 개의 값을 반환받도록 수정 ---
 	upsertedRole, err := impersonatedClient.UpsertRole(ctx, role)
 	if err != nil {
 		log.Printf("[UpsertRole] API 호출 실패: %v", err)
@@ -255,11 +258,11 @@ func (h *Handlers) UpsertRole(c *gin.Context) {
 		return
 	}
 
-	//  (2): 성공 시 생성/수정된 객체 자체를 반환 ---
 	log.Printf("[UpsertRole] 성공: 역할 '%s'가 생성/수정되었습니다.", upsertedRole.GetName())
 	c.JSON(http.StatusOK, upsertedRole) // 단순 메시지 대신, 생성/수정된 Role 객체를 반환
 }
 
+// DeleteRole은 특정 Teleport 역할을 삭제합니다.
 func (h *Handlers) DeleteRole(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -296,6 +299,7 @@ func (h *Handlers) DeleteRole(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("역할 '%s'이(가) 성공적으로 삭제되었습니다.", roleToDelete)})
 }
 
+// GetNodes는 클러스터에 등록된 모든 SSH 노드(서버) 목록을 조회합니다.
 func (h *Handlers) GetNodes(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -321,6 +325,7 @@ func (h *Handlers) GetNodes(c *gin.Context) {
 	c.JSON(http.StatusOK, nodes)
 }
 
+// GenerateNodeJoinToken은 새로운 노드가 클러스터에 참여할 때 사용할 임시 토큰을 생성합니다.
 func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -328,7 +333,7 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 		return
 	}
 
-	// 1. 요청 본문을 바인딩하고 유효성을 검사합니다.
+	// 요청 본문을 바인딩하고 유효성을 검사합니다.
 	var req GenerateTokenRequest
 	// 요청 값이 없을 경우 사용할 기본값 설정
 	defaults := GenerateTokenRequest{
@@ -375,8 +380,7 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	}
 	defer impersonatedClient.Close()
 
-	// 2. [핵심] 클라이언트 측에서 안전한 랜덤 토큰 문자열 생성
-	// 16바이트 -> 32자리 헥스(hex) 문자열
+	// 클라이언트 측에서 안전한 랜덤 토큰 문자열 생성
 	tokenBytes := make([]byte, 16)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "안전한 토큰 생성에 실패했습니다: " + err.Error()})
@@ -384,7 +388,7 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	}
 	tokenValue := hex.EncodeToString(tokenBytes)
 	log.Printf("[GenerateToken] 새로운 토큰 값 생성 완료: %s", tokenValue)
-	// 3. [핵심] 생성한 토큰 값으로 ProvisionToken 객체 생성
+	// 생성한 토큰 값으로 ProvisionToken 객체 생성
 	token, err := types.NewProvisionToken(tokenValue, []types.SystemRole{types.RoleNode}, time.Now().Add(ttl))
 	if err != nil {
 		log.Printf("[GenerateToken] 랜덤 토큰 생성 실패: %v", err)
@@ -393,7 +397,7 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	}
 
 	log.Printf("[GenerateToken] 서버에 토큰(%s) 등록을 시도합니다.", tokenValue)
-	// 4. [핵심] 올바른 메서드인 CreateToken을 사용하여 서버에 등록
+	// 올바른 메서드인 CreateToken을 사용하여 서버에 등록
 	err = impersonatedClient.CreateToken(ctx, token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "조인 토큰을 서버에 등록하는 데 실패했습니다: " + err.Error()})
@@ -408,7 +412,7 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	oneLineInstallCommand := fmt.Sprintf(`curl %s | sudo bash`, scriptURL)
 
 	manualStartCommand := fmt.Sprintf("sudo teleport start --roles=node --token=%s --auth-server=%s --nodename=%s", tokenValue, config.LoadConfig().TeleportProxyAddr, req.Nodename)
-	// 5. 사용자에게 제공할 안내 정보 구성 (환경에 맞게 수정 필요)
+	//사용자에게 제공할 안내 정보 구성
 
 	response := gin.H{
 		"token":   tokenValue,
@@ -426,6 +430,7 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// DeleteNode는 클러스터에서 특정 노드를 삭제합니다.
 func (h *Handlers) DeleteNode(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
@@ -453,7 +458,6 @@ func (h *Handlers) DeleteNode(c *gin.Context) {
 
 	err = impersonatedClient.DeleteNode(ctx, "default", nodeNameToDelete)
 	if err != nil {
-		// trace.IsNotFound(err)를 사용해 노드가 이미 없는 경우를 구분할 수 있습니다.
 		if trace.IsNotFound(err) {
 			log.Printf("[DeleteNode] 삭제할 노드(%s)를 찾을 수 없음: %v", nodeNameToDelete, err)
 			c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("노드 '%s'를 찾을 수 없습니다.", nodeNameToDelete)})
@@ -466,7 +470,7 @@ func (h *Handlers) DeleteNode(c *gin.Context) {
 	}
 	log.Printf("[DeleteNode] 성공: 노드 '%s'가 성공적으로 삭제되었습니다.", nodeNameToDelete)
 
-	// 3. [개선] 성공 시 명확한 JSON 응답을 반환합니다.
+	// 성공 시 명확한 JSON 응답을 반환합니다.
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "Node deleted successfully",
 		"nodename":   nodeNameToDelete,
@@ -474,6 +478,7 @@ func (h *Handlers) DeleteNode(c *gin.Context) {
 	})
 }
 
+// GetAuditEvents는 최근 24시간 동안의 감사 이벤트 로그를 조회합니다.
 func (h *Handlers) GetAuditEvents(c *gin.Context) {
 
 	impersonatedUser := c.GetString("username")
@@ -509,6 +514,7 @@ func (h *Handlers) GetAuditEvents(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
+// ListRecordedSessions는 종료된 SSH 세션 목록을 조회합니다.
 func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 
 	impersonatedUser := c.GetString("username")
@@ -535,7 +541,7 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 		[]string{"session.end"}, // "session.end" 이벤트만 필터링
 		100,
 		types.EventOrderDescending,
-		"", // 페이지네이션을 사용하지 않으므로 커서는 비워둡니다.
+		"",
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "감사 로그를 가져오는 데 실패했습니다: " + err.Error()})
@@ -545,13 +551,14 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
+// processSessionLogic은 세션 스크립트를 추출, 분석하고 Logstash로 전송하는 백그라운드 작업입니다.
 func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string) {
 	log.Printf("세션 처리 시작: %s", sessionID)
 	// Race Conditionq, 서버 저장 중 요청 방지
 	time.Sleep(15 * time.Second)
 
 	// 실행할 tsh play 명령어 전체를 미리 출력합니다.
-	log.Printf("[DEBUG] Executing command: tsh play --proxy=%s -i %s --format=text %s", h.TeleportService.Cfg.TeleportProxyAddr, h.TeleportService.Cfg.TbotIdentityFile, sessionID)
+	// log.Printf("[DEBUG] Executing command: tsh play --proxy=%s -i %s --format=text %s", h.TeleportService.Cfg.TeleportProxyAddr, h.TeleportService.Cfg.TbotIdentityFile, sessionID)
 	cmd := exec.CommandContext(ctx, "tsh", "play",
 		"--proxy="+h.TeleportService.Cfg.TeleportProxyAddr,
 		"-i", h.TeleportService.Cfg.TbotIdentityFile,
@@ -572,7 +579,7 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 
 	log.Printf("[DEBUG] Transcript for session %s extracted successfully. \n Sending script: %s \n", sessionID, transcript)
 
-	// 2. Gemini 서비스로 분석 요청
+	// Gemini 서비스로 분석 요청
 	analysis, err := h.GeminiService.AnalyzeTranscript(ctx, transcript)
 	if err != nil {
 		log.Printf("세션 %s 분석 실패: %v", sessionID, err)
@@ -581,7 +588,7 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 
 	log.Printf("[DEBUG] Gemini analysis for session %s completed.", sessionID)
 
-	// 3. 최종 데이터 조합 및 Logstash 전송
+	// 최종 데이터 조합 및 Logstash 전송
 	enrichedLog := EnrichedLog{
 		SessionID:    sessionID,
 		User:         gjson.Get(logData, "user").String(),
@@ -620,10 +627,9 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 	}
 }
 
-// Logstash로부터 session.end 이벤트를 받아 처리하는 핸들러
+// AnalyzeSession은 Logstash로부터 session.end 이벤트를 받아 AI 분석을 트리거하는 함수입니다.
 func (h *Handlers) AnalyzeSession(c *gin.Context) {
-	// Logstash가 보낸 JSON을 특정 타입이 아닌 일반 맵으로 받습니다.
-	// 이렇게 하면 타입 불일치 오류를 피하고 유연하게 데이터를 받을 수 있습니다.
+	// Logstash가 보낸 JSON을 특정 타입이 아닌 일반 맵으로 수신
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		log.Printf("[AnalyzeSession] ERROR: Invalid JSON from Logstash: %v", err)
@@ -654,7 +660,7 @@ func (h *Handlers) AnalyzeSession(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"status": "request accepted, processing in background"})
 }
 
-// Server-Sent Events (SSE)를 사용하여 클라이언트에게 실시간으로 세션 이벤트를 전송합니다.
+// StreamRecordedSession은 특정 세션의 녹화 내용을 클라이언트로 실시간 스트리밍합니다.
 func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 
 	impersonatedUser := c.GetString("username")
@@ -682,17 +688,16 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 	}
 	defer impersonatedClient.Close()
 
-	// 3. StreamSessionEvents를 올바르게 호출하여 두 개의 채널을 받음
+	// StreamSessionEvents를 올바르게 호출하여 두 개의 채널을 받음
 	// startIndex 0은 녹화 시작부터 모든 이벤트를 가져옵니다.
 	eventChan, errChan := impersonatedClient.StreamSessionEvents(ctx, sessionID, 0)
 
-	// 4. SSE 스트리밍 설정
-	// 클라이언트가 SSE 스트림을 받을 수 있도록 헤더를 설정합니다.
+	// SSE 스트리밍 설정, 클라이언트가 SSE 스트림을 받을 수 있도록 헤더를 설정합니다.
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 
-	// [디버깅] SSE 연결 유지를 위한 keep-alive Ticker 설정 (15초마다 전송)
+	// SSE 연결 유지를 위한 keep-alive Ticker 설정 (15초마다 전송)
 	keepAliveTicker := time.NewTicker(15 * time.Second)
 	defer keepAliveTicker.Stop()
 
@@ -733,7 +738,7 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 			}
 
 		case err := <-errChan:
-			// [디버깅] 에러 채널에서 수신된 내용을 명확히 로깅합니다. nil이라도 기록되어야 합니다.
+			// 에러 채널에서 수신된 내용을 명확히 로깅합니다. nil이라도 기록되어야 합니다.
 			if err != nil {
 				log.Printf("ERROR: 스트리밍 중 오류 발생 (errChan 수신): %v", err)
 			} else {
@@ -745,7 +750,7 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 			log.Printf("[StreamRecordedSession] 클라이언트 연결 끊김 (ctx.Done()): 세션='%s'", sessionID)
 			return
 
-		// [디버깅] 주기적으로 keep-alive 메시지를 보내 연결 상태를 확인하고 타임아웃을 방지합니다.
+		// 주기적으로 keep-alive 메시지를 보내 연결 상태를 확인하고 타임아웃을 방지합니다.
 		case <-keepAliveTicker.C:
 			log.Printf("[디버깅] Keep-alive 핑 전송")
 			c.SSEvent("keep-alive", "ping")

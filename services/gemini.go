@@ -13,22 +13,25 @@ import (
 	"cloud.google.com/go/vertexai/genai"
 )
 
-// Gemini API 응답을 위한 구조체
+// Analysis는 Gemini API의 분석 결과를 담는 구조체입니다.
 type Analysis struct {
 	IsAnomaly bool   `json:"is_anomaly"`
 	Reason    string `json:"reason"`
 	Summary   string `json:"summary"`
 }
 
+// GeminiService는 Gemini 클라이언트와 모델 설정을 관리합니다.
 type GeminiService struct {
 	client *genai.Client
 	model  string
 }
 
+// Analyzer는 텍스트 분석 기능을 위한 인터페이스를 정의합니다.
 type Analyzer interface {
 	AnalyzeTranscript(ctx context.Context, transcript string) (*Analysis, error)
 }
 
+// NewGeminiService는 설정 정보를 바탕으로 새로운 GeminiService를 생성하고 초기화합니다.
 func NewGeminiService(ctx context.Context, cfg *config.Config) (*GeminiService, error) {
 	client, err := genai.NewClient(ctx, cfg.GCPProjectID, cfg.GCPLocation)
 	if err != nil {
@@ -39,7 +42,7 @@ func NewGeminiService(ctx context.Context, cfg *config.Config) (*GeminiService, 
 	return &GeminiService{client: client, model: cfg.GeminiModel}, nil
 }
 
-// 세션 내용을 받아 Gemini API로 분석 요청
+// AnalyzeTranscript는 세션 스크립트를 받아 Gemini API로 분석을 요청하고 결과를 반환합니다.
 func (s *GeminiService) AnalyzeTranscript(ctx context.Context, transcript string) (*Analysis, error) {
 	//log.Printf("[DEBUG] AnalyzeTranscript 시작. 수신된 Transcript 길이: %d", len(transcript))
 	if len(transcript) == 0 {
@@ -74,6 +77,7 @@ func (s *GeminiService) AnalyzeTranscript(ctx context.Context, transcript string
 	return analysis, nil
 }
 
+// buildPrompt는 AI 분석을 위해 시스템 역할과 지시사항이 포함된 프롬프트를 생성합니다.
 func buildPrompt(transcript string) string {
 	// 보안 전문가 역할 부여 및 명확한 지시를 포함한 프롬프트
 	return fmt.Sprintf(`
@@ -93,6 +97,7 @@ Transcript:
 `, transcript)
 }
 
+// parseGeminiResponse는 Gemini API의 응답에서 JSON 데이터를 추출하고 Analysis 구조체로 파싱합니다.
 func parseGeminiResponse(resp *genai.GenerateContentResponse) (*Analysis, error) {
 	var analysis Analysis
 	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {

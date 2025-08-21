@@ -22,24 +22,17 @@ import (
 	"google.golang.org/grpc"
 )
 
+// machineIDIdentityFile은 tbot이 생성하고 관리하는 서비스 계정의 ID 파일 경로입니다.
 const machineIDIdentityFile = "/opt/jarvis-service-identity"
 
-// Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
+// Service는 Teleport 클라이언트와 관련된 모든 작업을 처리하는 구조체입니다.
 type Service struct {
 	Client     *client.Client
 	Cfg        *config.Config
 	caCertPool *x509.CertPool
 }
 
-// CertificateConfig는 인증서 생성 시 사용할 설정입니다.
-type CertificateConfig struct {
-	TTL           time.Duration
-	AccessLevel   string
-	AllowedLogins []string
-}
-
-// NewService는 새로운 Teleport 서비스를 생성합니다.
-// tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
+// NewService는 새로운 Teleport 서비스를 생성하고 초기화합니다.
 func NewService(cfg *config.Config) (*Service, error) {
 	//ID 파일에서 CA 인증서를 읽어와 메모리에 저장합니다.
 	id, err := identityfile.ReadFile(machineIDIdentityFile)
@@ -74,13 +67,16 @@ func NewService(cfg *config.Config) (*Service, error) {
 	log.Printf("Teleport 클러스터(%s)에 성공적으로 연결되었습니다.", cfg.TeleportAuthAddr)
 	return &Service{Client: mainClient, Cfg: cfg, caCertPool: caCertPool}, nil
 }
+
+// Close는 Teleport 클라이언트 연결을 안전하게 종료합니다.
 func (s *Service) Close() {
 	if s.Client != nil {
 		s.Client.Close()
 	}
 }
 
-// GetImpersonatedClient 함수는 특정 사용자를 위해 지정된 단기 인증서를 발급하고, 그 인증서를 사용하는 새로운 Teleport 클라이언트를 반환합니다.
+// GetImpersonatedClient는 특정 사용자를 위해 5분 수명의 단기 인증서를 발급하고,
+// 그 인증서를 사용하는 새로운 임시 Teleport 클라이언트를 생성하여 반환합니다.
 func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*client.Client, string, error) {
 	//log.Printf("[DEBUG] GetImpersonatedClient 호출됨 (사용자: %s)", username)
 	// 단기 인증서를 위한 새로운 키 쌍을 메모리에서 생성합니다.
@@ -149,7 +145,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 	} else {
 		//log.Printf("[DEBUG] creds.caCertPool: OK (%d개의 CA 인증서 포함)", len(creds.caCertPool.Subjects()))
 	}
-	log.Println("-------------------------------------------------")
+	//log.Println("-------------------------------------------------")
 
 	//log.Println("[DEBUG] Impersonated 클라이언트 생성 시작...")
 	impersonatedClient, err := client.New(ctx, client.Config{
@@ -164,6 +160,7 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 	return impersonatedClient, "", nil
 }
 
+// inMemoryCreds는 동적으로 생성된 임시 자격증명을 메모리에만 저장하기 위한 구조체입니다.
 type inMemoryCreds struct {
 	privateKey ed25519.PrivateKey
 	tlsCert    []byte
@@ -171,8 +168,9 @@ type inMemoryCreds struct {
 	caCertPool *x509.CertPool
 }
 
+// TLSConfig는 메모리에 있는 인증서와 키를 사용하여 TLS 연결 설정을 생성합니다.
 func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
-	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 호출됨")
+	//log.Println("[DEBUG] inMemoryCreds: TLSConfig() 호출됨")
 
 	// raw 개인키를 PEM 형식으로 인코딩합니다
 	privDER, err := x509.MarshalPKCS8PrivateKey(c.privateKey)
@@ -191,23 +189,25 @@ func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 		log.Printf("[ERROR] inMemoryCreds: tls.X509KeyPair 생성 실패: %v", err)
 		return nil, trace.Wrap(err)
 	}
-	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 성공")
+	//log.Println("[DEBUG] inMemoryCreds: TLSConfig() 성공")
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      c.caCertPool,
 	}, nil
 }
 
+// SSHClientConfig는 SSH 터널 연결 설정을 생성합니다.
 func (c *inMemoryCreds) SSHClientConfig() (*ssh.ClientConfig, error) {
-	log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
+	//log.Println("[DEBUG] inMemoryCreds: SSHClientConfig() 호출됨")
 	return nil, trace.NotImplemented("ssh config not required for direct grpc connection")
 }
 
+// Expiry는 자격증명의 만료 시간을 반환합니다.
 func (c *inMemoryCreds) Expiry() (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// ProvisionTeleportUser는 사용자가 없으면 생성하고, 있으면 넘어갑니다.
+// ProvisionTeleportUser는 GitHub 사용자에 해당하는 Teleport 사용자가 없으면 새로 생성합니다.
 func (s *Service) ProvisionTeleportUser(ctx context.Context, githubUsername string) error {
 	defaultRoles := []string{"basic-user"}
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -244,7 +244,7 @@ func (s *Service) ProvisionTeleportUser(ctx context.Context, githubUsername stri
 	return nil
 }
 
-// isCertExpiredError와 refreshClient는 비공개 헬퍼 함수로 유지
+// isCertExpiredError는 에러 메시지에서 인증서 만료 관련 텍스트를 확인하는 헬퍼 함수입니다.
 func isCertExpiredError(err error) bool {
 	if err == nil {
 		return false
@@ -256,6 +256,7 @@ func isCertExpiredError(err error) bool {
 		strings.Contains(msg, "access denied: expired session")
 }
 
+// refreshClient는 tbot ID 파일로 Teleport 클라이언트를 다시 생성하여 갱신합니다.
 func (s *Service) refreshClient() error {
 	creds := client.LoadIdentityFile(s.Cfg.TbotIdentityFile)
 	newClient, err := client.New(context.Background(), client.Config{
