@@ -26,9 +26,10 @@ const machineIDIdentityFile = "/opt/jarvis-service-identity"
 
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
-	Client     *client.Client
-	Cfg        *config.Config
-	caCertPool *x509.CertPool
+	Client      *client.Client
+	Cfg         *config.Config
+	caCertPool  *x509.CertPool
+	ClusterName string
 }
 
 // CertificateConfig는 인증서 생성 시 사용할 설정입니다.
@@ -67,12 +68,13 @@ func NewService(cfg *config.Config) (*Service, error) {
 	// 연결 상태 확인
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := mainClient.Ping(ctx); err != nil {
+	ping, err := mainClient.Ping(ctx)
+	if err != nil {
 		mainClient.Close()
 		return nil, fmt.Errorf("Teleport 클러스터(%s) 연결 실패: %w", cfg.TeleportAuthAddr, err)
 	}
-	log.Printf("Teleport 클러스터(%s)에 성공적으로 연결되었습니다.", cfg.TeleportAuthAddr)
-	return &Service{Client: mainClient, Cfg: cfg, caCertPool: caCertPool}, nil
+	log.Printf("Teleport 클러스터(%s)에 성공적으로 연결되었습니다.", ping.ClusterName)
+	return &Service{Client: mainClient, Cfg: cfg, caCertPool: caCertPool, ClusterName: ping.ClusterName}, nil
 }
 func (s *Service) Close() {
 	if s.Client != nil {
@@ -108,17 +110,13 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		Type:  "PUBLIC KEY",
 		Bytes: tlsPubKeyDER,
 	})
-	const clusterName = "mycluster.local"
-	log.Printf("[DEBUG] 고정된 클러스터 이름 사용: %s", clusterName)
-	// 장기 인증서를 가진 클라이언트를 사용해 단기 인증서 발급을 요청합니다.
-
 	log.Println("[DEBUG] Teleport Auth 서버에 사용자 인증서 발급 요청 시작...")
 	certs, err := s.Client.GenerateUserCerts(ctx, proto.UserCertsRequest{
 		SSHPublicKey:   pubKeyBytes,
 		TLSPublicKey:   tlsPubKeyPEM,
 		Username:       username,
 		Expires:        time.Now().UTC().Add(5 * time.Minute),
-		RouteToCluster: clusterName,
+		RouteToCluster: s.ClusterName,
 	})
 	if err != nil {
 		log.Printf("[ERROR] 사용자 인증서 발급 실패: %v", err)

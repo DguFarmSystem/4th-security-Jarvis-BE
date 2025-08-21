@@ -63,7 +63,7 @@ func HandleWebSocket(c *gin.Context) {
 		SSHPublicKey:   pub,
 		Username:       githubUser,
 		Expires:        time.Now().Add(5 * time.Minute).UTC(),
-		RouteToCluster: "mycluster.local", // 실제 cluster name으로 변경
+		RouteToCluster: svc.ClusterName,
 	})
 	if err != nil {
 		log.Printf("SSH 인증서 발급 실패: %v", err)
