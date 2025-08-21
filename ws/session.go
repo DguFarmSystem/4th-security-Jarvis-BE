@@ -80,14 +80,13 @@ func HandleWebSocket(c *gin.Context) {
 	}
 
 	sshConfig := &ssh.ClientConfig{
-		User:            githubUser,
+		User:            loginUser,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: CA 검증으로 교체 가능
 		Timeout:         10 * time.Second,
 	}
 
-	// 노드에 SSH 연결 (Teleport proxy 3022 또는 직접 노드 주소)
-	// Teleport proxy 서비스는 기본적으로 3022 포트에서 SSH 연결을 프록시하므로, 노드의 22번 포트 대신 3022 포트에 연결합니다.
+	// 노드에 SSH 연결
 	target := fmt.Sprintf("%s:3022", nodeHost)
 	conn, err := ssh.Dial("tcp", target, sshConfig)
 	if err != nil {
