@@ -79,8 +79,8 @@ jobs:
               -e TELEPORT_AUDIT_LOG_PATH='/var/lib/teleport/log/events.log' \
               -e TBOT_IDENTITY_FILE_PATH='/opt/machine-id/identity' \
               -e GOOGLE_APPLICATION_CREDENTIALS='/etc/gcp/gcp-sa-key.json' \
-              -v ~/teleport-daemon/keys/fullchain.pem:/etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem \
-              -v ~/teleport-daemon/keys/privkey.pem:/etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem \
+              -v ~/teleport-daemon/keys/fullchain.pem:/etc/letsencrypt/fullchain.pem \
+              -v ~/teleport-daemon/keys/privkey.pem:/etc/letsencrypt/privkey.pem \
               -v tbot-certs-volume:/opt/machine-id \
               -v ~/identity:/opt/jarvis-service-identity:ro \
               -v /var/lib/teleport/log/events.log:/var/lib/teleport/log/events.log:ro \

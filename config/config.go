@@ -33,12 +33,12 @@ func LoadConfig() *Config {
 		log.Fatal("치명적 오류: JWT_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
 	}
 	cfg := &Config{
-		TeleportProxyAddr: os.Getenv("TELEPORT_PROXY_ADDR"),                            // 사용자가 접속하는 Teleport 프록시 서비스의 주소입니다. (예: your-proxy.example.com:443)
-		TeleportAuthAddr:  os.Getenv("TELEPORT_AUTH_ADDR"),                             // Teleport 인증 서비스의 주소입니다. API 호출 시 사용됩니다. (예: your-auth.example.com:3025)
-		JWTSecretKey:      []byte(secretString),                                        // JWT 서명에 사용될 바이트 슬라이스 형태의 비밀 키입니다.
-		CertFile:          "/etc/letsencrypt/live/openswdev.duckdns.org/fullchain.pem", // HTTPS 서버를 위한 SSL 인증서 파일의 경로입니다.
-		KeyFile:           "/etc/letsencrypt/live/openswdev.duckdns.org/privkey.pem",   // HTTPS 서버를 위한 SSL 개인 키 파일의 경로입니다.
-		ListenAddr:        ":8080",                                                     // 애플리케이션이 리스닝할 주소와 포트입니다.
+		TeleportProxyAddr: os.Getenv("TELEPORT_PROXY_ADDR"), // 사용자가 접속하는 Teleport 프록시 서비스의 주소입니다. (예: your-proxy.example.com:443)
+		TeleportAuthAddr:  os.Getenv("TELEPORT_AUTH_ADDR"),  // Teleport 인증 서비스의 주소입니다. API 호출 시 사용됩니다. (예: your-auth.example.com:3025)
+		JWTSecretKey:      []byte(secretString),             // JWT 서명에 사용될 바이트 슬라이스 형태의 비밀 키입니다.
+		CertFile:          "/etc/letsencrypt/fullchain.pem", // HTTPS 서버를 위한 SSL 인증서 파일의 경로입니다.
+		KeyFile:           "/etc/letsencrypt/privkey.pem",   // HTTPS 서버를 위한 SSL 개인 키 파일의 경로입니다.
+		ListenAddr:        ":8080",                          // 애플리케이션이 리스닝할 주소와 포트입니다.
 		GitHubOAuthConfig: &oauth2.Config{ // GitHub OAuth 애플리케이션 설정입니다.
 			ClientID:     os.Getenv("GITHUB_CLIENT_ID"),     // GitHub OAuth App의 클라이언트 ID입니다.
 			ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"), // GitHub OAuth App의 클라이언트 시크릿입니다.
