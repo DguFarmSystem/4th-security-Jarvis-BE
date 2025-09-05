@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/github"
 )
 
 // Config는 애플리케이션의 모든 설정을 담는 구조체입니다.
@@ -39,13 +38,14 @@ func LoadConfig() *Config {
 		CertFile:          "/etc/letsencrypt/fullchain.pem", // HTTPS 서버를 위한 SSL 인증서 파일의 경로입니다.
 		KeyFile:           "/etc/letsencrypt/privkey.pem",   // HTTPS 서버를 위한 SSL 개인 키 파일의 경로입니다.
 		ListenAddr:        ":8080",                          // 애플리케이션이 리스닝할 주소와 포트입니다.
-		GitHubOAuthConfig: &oauth2.Config{ // GitHub OAuth 애플리케이션 설정입니다.
-			ClientID:     os.Getenv("GITHUB_CLIENT_ID"),     // GitHub OAuth App의 클라이언트 ID입니다.
-			ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"), // GitHub OAuth App의 클라이언트 시크릿입니다.
-			RedirectURL:  os.Getenv("GITHUB_CALLBACK_URL"),  // GitHub에서 인증 후 리디렉션될 콜백 URL입니다.
-			Endpoint:     github.Endpoint,
-			Scopes:       []string{"read:user", "read:org"},
-		},
+		/*
+			GitHubOAuthConfig: &oauth2.Config{ // GitHub OAuth 애플리케이션 설정입니다.
+				ClientID:     os.Getenv("GITHUB_CLIENT_ID"),     // GitHub OAuth App의 클라이언트 ID입니다.
+				ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"), // GitHub OAuth App의 클라이언트 시크릿입니다.
+				RedirectURL:  os.Getenv("GITHUB_CALLBACK_URL"),  // GitHub에서 인증 후 리디렉션될 콜백 URL입니다.
+				Endpoint:     github.Endpoint,
+				Scopes:       []string{"read:user", "read:org"},
+			},*/
 		LogstashURL:      "http://event-listen_logstash_1:5001", // Teleport 이벤트 플러그인이 이벤트를 전송할 Logstash의 주소입니다.
 		AuditLogPath:     os.Getenv("TELEPORT_AUDIT_LOG_PATH"),  //  Teleport 감사 로그 파일의 경로입니다.
 		GCPProjectID:     os.Getenv("GCP_PROJECT_ID"),           // Google Cloud Platform 프로젝트의 ID입니다.
