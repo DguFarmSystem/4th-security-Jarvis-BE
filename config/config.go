@@ -54,7 +54,7 @@ func LoadConfig() *Config {
 		TbotIdentityFile: os.Getenv("TBOT_IDENTITY_FILE_PATH"),  // `tbot`이 생성하고 관리하는 서비스 계정의 ID 파일 경로입니다.
 	}
 
-	if cfg.TeleportProxyAddr == "" || cfg.GitHubOAuthConfig.ClientID == "" {
+	if cfg.TeleportProxyAddr == "" /*|| cfg.GitHubOAuthConfig.ClientID == "" */ {
 		log.Println("경고: 일부 기능에 필요한 환경 변수가 설정되지 않았을 수 있습니다.")
 	}
 
