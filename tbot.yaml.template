@@ -12,11 +12,5 @@ outputs:
       path: /opt/machine-id
     ssh_config: "on"
     allow_reissue: true
-
-  - type: identity
-    roles: [teleport-event-handler] 
-    destination:
-      type: directory
-      path: /shared-certs/event-handler-identity
-proxy_server: openswdev.duckdns.org:3080
+proxy_server: teleport-daemon:3080
 debug: true
