@@ -61,8 +61,11 @@ func LoadConfig() *Config {
 		log.Println("경고: 일부 기능에 필요한 환경 변수가 설정되지 않았을 수 있습니다.")
 	}
 
-	if cfg.AuditLogPath == "" || cfg.GCPProjectID == "" || cfg.GCPLocation == "" || cfg.GeminiModel == "" || cfg.TbotIdentityFile == "" {
+	if cfg.AuditLogPath == "" || cfg.TbotIdentityFile == "" {
 		log.Fatal("치명적 오류: AuditLogPath, GCP 관련, TbotIdentityFile 환경 변수 설정이 필요합니다.")
+	}
+	if cfg.GCPProjectID == "" || cfg.GCPLocation == "" || cfg.GeminiModel == "" {
+		log.Println("치명적 오류: GCP 관련 환경 변수가 설정되지 않았습니다")
 	}
 
 	return cfg

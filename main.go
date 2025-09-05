@@ -31,7 +31,7 @@ func main() {
 	// Gemini 서비스 초기화
 	geminiService, err := services.NewGeminiService(ctx, cfg)
 	if err != nil {
-		log.Fatalf("Gemini 서비스 초기화 실패: %v", err)
+		log.Println("Gemini 서비스 초기화 실패: %v", err)
 	}
 
 	// 핸들러 및 미들웨어 초기화 (의존성 주입)

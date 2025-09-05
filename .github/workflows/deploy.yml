@@ -76,6 +76,8 @@ jobs:
               -e GCP_PROJECT_ID='${{ secrets.GCP_PROJECT_ID }}' \
               -e GCP_LOCATION='${{ secrets.GCP_LOCATION }}' \
               -e GEMINI_MODEL='${{ secrets.GEMINI_MODEL }}' \
+              -e GITHUB_ORG_NAME='${{ secrets.ORG_NAME }}' \
+              -e GITHUB_TEAM_SLUG='${{ secrets.TEAM_SLUG }}' \
               -e TELEPORT_AUDIT_LOG_PATH='/var/lib/teleport/log/events.log' \
               -e TBOT_IDENTITY_FILE_PATH='/opt/machine-id/identity' \
               -e GOOGLE_APPLICATION_CREDENTIALS='/etc/gcp/gcp-sa-key.json' \
