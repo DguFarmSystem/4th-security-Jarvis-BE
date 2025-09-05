@@ -57,8 +57,8 @@ func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 	}
 
 	// 팀 멤버십 확인 로직
-	orgName := "4th-security-Jarvis"
-	teamSlug := "jarvis"
+	orgName := h.Cfg.OrgName
+	teamSlug := h.Cfg.TeamSlug
 	teamMembershipURL := fmt.Sprintf("https://api.github.com/orgs/%s/teams/%s/memberships/%s", orgName, teamSlug, user.Login)
 	req, _ := http.NewRequest("GET", teamMembershipURL, nil)
 	teamResp, err := client.Do(req)

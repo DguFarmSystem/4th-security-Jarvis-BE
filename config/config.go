@@ -17,13 +17,14 @@ type Config struct {
 	CertFile          string
 	KeyFile           string
 	ListenAddr        string
-
-	LogstashURL      string // 데이터를 보낼 Logstash 주소
-	AuditLogPath     string // 감시할 Teleport 감사 로그 경로
-	GCPProjectID     string // GCP 프로젝트 ID
-	GCPLocation      string // Vertex AI 리전 (e.g., "us-central1")
-	GeminiModel      string // 사용할 Gemini 모델 (e.g., "gemini-1.5-flash-001")
-	TbotIdentityFile string // tbot 신원 파일 경로
+	LogstashURL       string // 데이터를 보낼 Logstash 주소
+	AuditLogPath      string // 감시할 Teleport 감사 로그 경로
+	GCPProjectID      string // GCP 프로젝트 ID
+	GCPLocation       string // Vertex AI 리전 (e.g., "us-central1")
+	GeminiModel       string // 사용할 Gemini 모델 (e.g., "gemini-1.5-flash-001")
+	TbotIdentityFile  string // tbot 신원 파일 경로
+	OrgName           string // github 조직 이름 (e.g., 4th-security-Jarvis)
+	TeamSlug          string // github team slug (e.g., jarvis)
 }
 
 // LoadConfig는 환경 변수에서 설정을 읽어 Config 객체를 생성하고 반환합니다.
@@ -52,6 +53,8 @@ func LoadConfig() *Config {
 		GCPLocation:      os.Getenv("GCP_LOCATION"),             // Vertex AI (Gemini)를 사용할 GCP 리전입니다. (예: "us-central1")
 		GeminiModel:      os.Getenv("GEMINI_MODEL"),             // 사용할 Gemini AI 모델의 이름입니다. (예: "gemini-1.5-flash-001")
 		TbotIdentityFile: os.Getenv("TBOT_IDENTITY_FILE_PATH"),  // `tbot`이 생성하고 관리하는 서비스 계정의 ID 파일 경로입니다.
+		OrgName:          os.Getenv("GITHUB_ORG_NAME"),          // github 조직 이름 (e.g., 4th-security-Jarvis)
+		TeamSlug:         os.Getenv("GITHUB_TEAM_SLUG"),         // github team slug (e.g., jarvis)
 	}
 
 	if cfg.TeleportProxyAddr == "" || cfg.GitHubOAuthConfig.ClientID == "" {
