@@ -33,6 +33,7 @@
 | `ORG_NAME` | 연동할 GitHub 조직(Organization)의 이름입니다. | `my-github-org` |
 | `TEAM_SLUG` | 조직 내 특정 팀의 슬러그(URL용 이름)입니다. | `my-awesome-team` |
 | `CALLBACK_URL` | GitHub OAuth 인증 후 리디렉션될 주소입니다. | `https://mydomain.com:8080/callback` |
+| `VITE_API_URL` | 사용자의 웹 주소입니다. | `mydomain.com` |
 | `GCP_PROJECT_ID` | 사용 중인 GCP 프로젝트의 고유 ID입니다. | `my-gcp-project-12345` |
 | `GCP_HOST` | 배포된 GCP VM 인스턴스의 외부 IP 주소입니다. | `34.56.78.90` |
 | `GCP_LOCATION` | GCP 리소스가 위치한 리전입니다. | `asia-northeast3` |
