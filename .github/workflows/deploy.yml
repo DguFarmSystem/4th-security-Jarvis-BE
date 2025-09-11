@@ -70,6 +70,7 @@ jobs:
               -e GITHUB_CLIENT_ID='${{ secrets.CLIENT_ID }}' \
               -e GITHUB_CLIENT_SECRET='${{ secrets.CLIENT_SECRET }}' \
               -e GITHUB_CALLBACK_URL='${{ secrets.CALLBACK_URL }}' \
+              -e VITE_API_URL='${{ secrets.VITE_API_URL }}' \
               -e TELEPORT_PROXY_ADDR='${{ secrets.TELEPORT_PROXY_ADDR }}' \
               -e TELEPORT_AUTH_ADDR='${{ secrets.TELEPORT_AUTH_ADDR }}' \
               -e JWT_SECRET_KEY='${{ secrets.JWT_SECRET_KEY }}' \
@@ -87,7 +88,7 @@ jobs:
               -v ~/identity:/opt/jarvis-service-identity:ro \
               -v /var/lib/teleport/log/events.log:/var/lib/teleport/log/events.log:ro \
               -v ~/gcp-sa-key.json:/etc/gcp/gcp-sa-key.json:ro \
-              --add-host=openswdev.duckdns.org:${TELEPORT_DAEMON_IP} \
+              --add-host='${{ secrets.VITE_API_URL }}':${TELEPORT_DAEMON_IP} \
               ${{ env.DOCKER_IMAGE_NAME }}:latest
               
             rm gcp-sa-key.json

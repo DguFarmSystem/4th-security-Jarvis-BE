@@ -12,5 +12,5 @@ outputs:
       path: /opt/machine-id
     ssh_config: "on"
     allow_reissue: true
-proxy_server: teleport-daemon:3080
+proxy_server: "${VITE_API_URL}":3080
 debug: true
