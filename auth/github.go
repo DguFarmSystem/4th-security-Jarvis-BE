@@ -101,5 +101,7 @@ func (h *Handler) HandleGitHubCallback(c *gin.Context) {
 
 	c.SetCookie("auth_token", tokenString, 3600, "/", "", true, false)
 
-	c.Redirect(http.StatusFound, "https://openswdev.duckdns.org")
+	dynamicOrigin := fmt.Sprintf("https://%s", h.Cfg.ViteApiUrl)
+
+	c.Redirect(http.StatusFound, dynamicOrigin)
 }
