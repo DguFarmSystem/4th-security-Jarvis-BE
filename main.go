@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -43,11 +44,14 @@ func main() {
 	router := gin.Default()
 
 	// CORS 미들웨어 설정
+
+	dynamicOrigin := fmt.Sprintf("https://%s:3000", cfg.ViteApiUrl)
+
 	corsConfig := cors.Config{
 		AllowOrigins: []string{
 			"https://jarvis-indol-omega.vercel.app",
 			"http://localhost:5173",
-			"https://openswdev.duckdns.org:3000",
+			dynamicOrigin,
 			"https://4th-security-jarvis.duckdns.org",
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
