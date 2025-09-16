@@ -32,7 +32,7 @@ func main() {
 	// Gemini 서비스 초기화
 	geminiService, err := services.NewGeminiService(ctx, cfg)
 	if err != nil {
-		log.Println("Gemini 서비스 초기화 실패: %v", err)
+		log.Println("Gemini 서비스 초기화 실패: ", err)
 	}
 
 	// 핸들러 및 미들웨어 초기화 (의존성 주입)
@@ -53,6 +53,7 @@ func main() {
 			"http://localhost:5173",
 			dynamicOrigin,
 			"https://4th-security-jarvis.duckdns.org",
+			"http://frontend:3000",
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
@@ -107,8 +108,8 @@ func main() {
 		IdleTimeout:  0,               // Keep-Alive 연결에서 다음 요청을 기다리는 최대 시간
 	}
 
-	// 직접 생성한 서버 객체로 TLS 서버를 시작합니다.
-	if err := server.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile); err != nil {
-		log.Fatalf("HTTPS 서버 실행 실패: %v", err)
+	// 직접 생성한 서버 객체로 http 서버를 시작합니다.
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("HTTP 서버 실행 실패: %v", err)
 	}
 }

@@ -35,7 +35,7 @@ func LoadConfig() *Config {
 		log.Fatal("치명적 오류: JWT_SECRET_KEY 환경 변수가 설정되지 않았습니다.")
 	}
 	cfg := &Config{
-		ViteApiUrl:        os.Getenv("VITE_API_URL"),        // 사용자의 웹 주소입니다. (예: your-proxy.example)
+		ViteApiUrl:        os.Getenv("TELEPORT_NAME"),       // 사용자의 웹 주소입니다. (예: your-proxy.example)
 		TeleportProxyAddr: os.Getenv("TELEPORT_PROXY_ADDR"), // 사용자가 접속하는 Teleport 프록시 서비스의 주소입니다. (예: your-proxy.example.com:443)
 		TeleportAuthAddr:  os.Getenv("TELEPORT_AUTH_ADDR"),  // Teleport 인증 서비스의 주소입니다. API 호출 시 사용됩니다. (예: your-auth.example.com:3025)
 		JWTSecretKey:      []byte(secretString),             // JWT 서명에 사용될 바이트 슬라이스 형태의 비밀 키입니다.
@@ -66,9 +66,8 @@ func LoadConfig() *Config {
 	if cfg.AuditLogPath == "" || cfg.TbotIdentityFile == "" {
 		log.Fatal("치명적 오류: AuditLogPath, GCP 관련, TbotIdentityFile 환경 변수 설정이 필요합니다.")
 	}
-	if cfg.GCPProjectID == "" || cfg.GCPLocation == "" || cfg.GeminiModel == "" {
-		log.Println("치명적 오류: GCP 관련 환경 변수가 설정되지 않았습니다")
-	}
-
+	// if cfg.GCPProjectID == "" || cfg.GCPLocation == "" || cfg.GeminiModel == "" {
+	// 	log.Println("치명적 오류: GCP 관련 환경 변수가 설정되지 않았습니다")
+	// }
 	return cfg
 }

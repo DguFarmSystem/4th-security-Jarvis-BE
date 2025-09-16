@@ -12,5 +12,6 @@ outputs:
       path: /opt/machine-id
     ssh_config: "on"
     allow_reissue: true
-proxy_server: "${VITE_API_URL}:3080"
+proxy_server: ${TELEPORT_NAME}:3080
+insecure: true
 debug: true

@@ -2,7 +2,6 @@
 set -e
 
 envsubst < /etc/tbot.yaml.template > /etc/tbot.yaml
-
 tbot start -c /etc/tbot.yaml &
 
 echo "Waiting 10 seconds for identity files to be generated..."
