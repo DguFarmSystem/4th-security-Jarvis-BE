@@ -25,8 +25,6 @@
 | :--- | :--- | :--- |
 | `CLIENT_ID` | GitHub OAuth App에서 발급받은 클라이언트 ID입니다. | `iv1.1234567890abcdef` |
 | `CLIENT_SECRET` | GitHub OAuth App에서 발급받은 클라이언트 시크릿입니다. | `gho_a1b2c3d4e5f6...` |
-| `DOCKERHUB_USERNAME` | Docker Hub 사용자 이름입니다. | `my-docker-id` |
-| `DOCKERHUB_TOKEN` | Docker Hub의 `Account Settings > Security`에서 생성한 Access Token입니다. | `dckr_pat_abcdefg...` |
 | `JWT_SECRET_KEY` | JWT 토큰 암호화를 위한 무작위 비밀 키입니다. (`openssl rand -base64 32` 명령어로 생성) | `AbcDef/123+gHiJkL...` |
 | `GCP_SA_KEY` | GCP `IAM > 서비스 계정`에서 생성한 JSON 형식의 서비스 계정 키입니다. | `{ "type": "service_account", ... }` |
 | `GEMINI_MODEL` | 사용할 Google Gemini AI 모델의 이름입니다. | `gemini-1.5-pro-latest` |
@@ -35,12 +33,9 @@
 | `CALLBACK_URL` | GitHub OAuth 인증 후 리디렉션될 주소입니다. | `https://mydomain.com:8080/callback` |
 | `VITE_API_URL` | 사용자의 웹 주소입니다. | `mydomain.com` |
 | `GCP_PROJECT_ID` | 사용 중인 GCP 프로젝트의 고유 ID입니다. | `my-gcp-project-12345` |
-| `GCP_HOST` | 배포된 GCP VM 인스턴스의 외부 IP 주소입니다. | `34.56.78.90` |
 | `GCP_LOCATION` | GCP 리소스가 위치한 리전입니다. | `asia-northeast3` |
-| `GCP_USERNAME` | GCP VM 인스턴스 접속용 사용자 이름입니다. | `ubuntu` |
-| `GCP_SSH_KEY` | GCP VM 인스턴스 접속을 위한 비공개 SSH 키입니다. | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
-| `TELEPORT_PROXY_ADDR` | Teleport 프록시 서비스 접속 주소입니다. | `https://mydomain.com:3080` |
-| `TELEPORT_AUTH_ADDR` | Teleport 인증 서버 접속 주소입니다. | `https://mydomain.com:3025` |
+| `TELEPORT_PROXY_ADDR` | Teleport 프록시 서비스 접속 주소입니다. | `teleport-daemon:3080` |
+| `TELEPORT_AUTH_ADDR` | Teleport 인증 서버 접속 주소입니다. | `teleport-daemon:3025` |
 
 ### 주요 환경변수 상세 설정 가이드
 
@@ -51,13 +46,7 @@
 2. **New OAuth App** 버튼을 클릭하여 새 앱을 등록합니다.
 3. 생성 후 발급된 **CLIENT_ID**와 **CLIENT_SECRET**을 환경변수에 등록합니다.
 
-#### **2. Docker Hub 접근 토큰 (`DOCKERHUB_TOKEN`)**
-GitHub Actions가 빌드된 이미지를 Docker Hub에 푸시(push)하기 위해 필요합니다.
-1. Docker Hub에 로그인 후, 우측 상단 프로필 > **Account Settings**로 이동합니다.
-2. **Security** 탭 > **New Access Token** 버튼을 클릭합니다.
-3. 생성된 토큰을 복사하여 환경변수에 등록합니다.
-
-#### **3. GCP 서비스 계정 키 (`GCP_SA_KEY`)**
+#### **2. GCP 서비스 계정 키 (`GCP_SA_KEY`)**
 1. **인스턴스 생성**: Compute Engine에서 `Ubuntu 24.04`, `e2-standard-8` (vCPU 8, 32GB RAM) 이상의 사양으로 VM 인스턴스를 생성합니다.
 2. **방화벽 설정**: 생성된 인스턴스의 네트워크 방화벽 규칙에서 `80`,`5601`, `8080`, `3080` 포트에 대한 TCP 인그레스(Ingress)를 허용합니다.
 3. **서비스 계정 생성 및 권한 부여**: **IAM & Admin > Service Accounts**에서 새 서비스 계정을 생성하고, **Vertex AI User** 역할을 부여합니다.
