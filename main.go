@@ -8,11 +8,9 @@ import (
 	"teleport-backend/api"
 	"teleport-backend/auth"
 	"teleport-backend/config"
-	"teleport-backend/teleport"
 	"teleport-backend/ws"
 
 	"github.com/gin-gonic/gin"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
@@ -26,23 +24,16 @@ func main() {
 	}
 	defer db.Close()
 
-	// Teleport 서비스 초기화
-	teleportService, err := teleport.NewService(cfg)
-	if err != nil {
-		log.Fatalf("Teleport 서비스 초기화 실패: %v", err)
-	}
-	defer teleportService.Close()
-
 	// 핸들러 및 미들웨어 초기화 (의존성 주입)/////////////
-	apiHandlers := api.NewHandlers(teleportService)
+	apiHandlers := api.NewHandlers(cfg)
 	authMiddleware := api.NewAuthMiddleware(cfg)
-	authHandler := auth.NewHandler(cfg, teleportService, db)
+	authHandler := auth.NewHandler(cfg, db)
 
 	// Gin 라우터 설정
 	router := gin.Default()
 
 	// 라우트 등록
-	router.GET("/login", authHandler.HandleLogin)
+	router.POST("/login", authHandler.HandleLogin)
 	router.POST("/register", authHandler.HandleReg)
 
 	// API v1 라우트 (JWT 인증 필요)
@@ -65,10 +56,6 @@ func main() {
 		apiV1.GET("/audit/events", apiHandlers.GetAuditEvents)
 		apiV1.GET("/audit/session", apiHandlers.ListRecordedSessions)
 		apiV1.GET("/audit/session/:sessionID", apiHandlers.StreamRecordedSession)
-	}
-	internalAPI := router.Group("/internal")
-	{
-		internalAPI.POST("/analyze-session", apiHandlers.AnalyzeSession)
 	}
 
 	// 웹소켓 라우트

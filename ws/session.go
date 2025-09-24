@@ -22,6 +22,7 @@ var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { retu
 
 // HandleWebSocket은 웹소켓 연결을 처리하고 Teleport API 기반 SSH 세션을 중계합니다.
 func HandleWebSocket(c *gin.Context) {
+	cfg := config.LoadConfig()
 	githubUser := c.GetString("username")
 	nodeHost := c.Query("node_host")
 	loginUser := c.Query("login_user")
@@ -30,27 +31,19 @@ func HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	// Teleport 서비스 생성
-	cfg := config.LoadConfig()
-	svc, err := teleport.NewService(cfg)
-	if err != nil {
-		log.Printf("Teleport 서비스 초기화 실패: %v", err)
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	defer svc.Close()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	// 사용자 단기 인증서 발급 (API 방식)
-	impersonatedClient, _, err := svc.GetImpersonatedClient(ctx, githubUser)
+	impersonatedClient, err := teleport.NewService(cfg, githubUser)
 	if err != nil {
 		log.Printf("임시 사용자 인증서 발급 실패: %v", err)
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 	defer impersonatedClient.Close()
+
+	ping, err := impersonatedClient.Ping(ctx)
 
 	// SSH 키/인증서 준비
 	pub, priv, err := generateSSHKeyPair()
@@ -63,7 +56,7 @@ func HandleWebSocket(c *gin.Context) {
 		SSHPublicKey:   pub,
 		Username:       githubUser,
 		Expires:        time.Now().Add(5 * time.Minute).UTC(),
-		RouteToCluster: svc.ClusterName,
+		RouteToCluster: ping.ClusterName,
 	})
 	if err != nil {
 		log.Printf("SSH 인증서 발급 실패: %v", err)

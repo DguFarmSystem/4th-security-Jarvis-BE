@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -9,9 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
 	"teleport-backend/config"
-	"teleport-backend/services"
 	"teleport-backend/teleport"
 	"time"
 
@@ -19,21 +16,19 @@ import (
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/api/types/events"
 	"github.com/gravitational/trace"
-	"github.com/tidwall/gjson"
 )
 
 // Handlers는 모든 API 핸들러 메서드를 가집니다.
 type Handlers struct {
-	TeleportService *teleport.Service
-	GeminiService   services.Analyzer
-	HttpClient      *http.Client
+	Cfg        *config.Config
+	HttpClient *http.Client
 }
 
 // NewHandlers는 API 핸들러 구조체를 생성하고 초기화합니다.
-func NewHandlers(ts *teleport.Service) *Handlers {
+func NewHandlers(cfg *config.Config) *Handlers {
 	return &Handlers{
-		TeleportService: ts,
-		HttpClient:      &http.Client{Timeout: 60 * time.Second},
+		Cfg:        cfg,
+		HttpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
@@ -48,7 +43,7 @@ func (h *Handlers) GetUsers(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -60,7 +55,6 @@ func (h *Handlers) GetUsers(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 목록 조회에 실패했습니다: " + err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, users)
 }
 
@@ -88,7 +82,7 @@ func (h *Handlers) DeleteUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		log.Printf("[DeleteUser] 클라이언트 생성 실패: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -132,7 +126,7 @@ func (h *Handlers) UpdateUser(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -170,7 +164,7 @@ func (h *Handlers) GetRoles(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -205,7 +199,7 @@ func (h *Handlers) CreateRole(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -243,7 +237,7 @@ func (h *Handlers) UpsertRole(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -280,7 +274,7 @@ func (h *Handlers) DeleteRole(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -309,7 +303,7 @@ func (h *Handlers) GetNodes(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -372,7 +366,7 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "사용자 권한 클라이언트 생성에 실패했습니다: " + err.Error()})
 		return
@@ -448,7 +442,7 @@ func (h *Handlers) DeleteNode(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -486,10 +480,7 @@ func (h *Handlers) GetAuditEvents(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-	defer cancel()
-
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -521,11 +512,7 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-	defer cancel()
-
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -550,115 +537,6 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
-// processSessionLogic은 세션 스크립트를 추출, 분석하고 Logstash로 전송하는 백그라운드 작업입니다.
-func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string) {
-	log.Printf("세션 처리 시작: %s", sessionID)
-	// Race Conditionq, 서버 저장 중 요청 방지
-	time.Sleep(15 * time.Second)
-
-	// 실행할 tsh play 명령어 전체를 미리 출력합니다.
-	// log.Printf("[DEBUG] Executing command: tsh play --proxy=%s -i %s --format=text %s", h.TeleportService.Cfg.TeleportProxyAddr, h.TeleportService.Cfg.TbotIdentityFile, sessionID)
-	cmd := exec.CommandContext(ctx, "tsh", "play",
-		"--proxy="+h.TeleportService.Cfg.TeleportProxyAddr,
-		"-i", h.TeleportService.Cfg.TbotIdentityFile,
-		"--format=text",
-		sessionID)
-
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if err != nil {
-		log.Printf("세션 %s의 로그 추출 실패 ('tsh play'): %v, Stderr: %s", sessionID, err, stderr.String())
-		return
-	}
-	transcript := out.String()
-
-	log.Printf("[DEBUG] Transcript for session %s extracted successfully. \n Sending script: %s \n", sessionID, transcript)
-
-	// Gemini 서비스로 분석 요청
-	analysis, err := h.GeminiService.AnalyzeTranscript(ctx, transcript)
-	if err != nil {
-		log.Printf("세션 %s 분석 실패: %v", sessionID, err)
-		return
-	}
-
-	log.Printf("[DEBUG] Gemini analysis for session %s completed.", sessionID)
-
-	// 최종 데이터 조합 및 Logstash 전송
-	enrichedLog := EnrichedLog{
-		SessionID:    sessionID,
-		User:         gjson.Get(logData, "user").String(),
-		ServerID:     gjson.Get(logData, "server_id").String(),
-		ServerAddr:   gjson.Get(logData, "server_addr").String(),
-		SessionStart: gjson.Get(logData, "session_start").String(),
-		SessionEnd:   gjson.Get(logData, "time").String(),
-		Transcript:   transcript,
-		Analysis:     analysis,
-	}
-
-	payload, err := json.Marshal(enrichedLog)
-	if err != nil {
-		log.Printf("세션 %s의 로그 데이터 직렬화 실패: %v", sessionID, err)
-		return
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", h.TeleportService.Cfg.LogstashURL, bytes.NewReader(payload))
-	if err != nil {
-		log.Printf("세션 %s의 Logstash 요청 생성 실패: %v", sessionID, err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := h.HttpClient.Do(req)
-	if err != nil {
-		log.Printf("세션 %s의 분석 로그를 Logstash로 전송 실패: %v", sessionID, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		log.Printf("세션 %s 전송 후 Logstash로부터 에러 응답 수신: %s", sessionID, resp.Status)
-	} else {
-		log.Printf("세션 %s의 분석 로그를 Logstash로 성공적으로 전송했습니다.", sessionID)
-	}
-}
-
-// AnalyzeSession은 Logstash로부터 session.end 이벤트를 받아 AI 분석을 트리거하는 함수입니다.
-func (h *Handlers) AnalyzeSession(c *gin.Context) {
-	// Logstash가 보낸 JSON을 특정 타입이 아닌 일반 맵으로 수신
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		log.Printf("[AnalyzeSession] ERROR: Invalid JSON from Logstash: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
-	}
-
-	// Logstash로부터 받은 페이로드 전체를 로그로 남깁니다.
-	requestBody, _ := json.Marshal(payload)
-	log.Printf("[DEBUG-RECEIVE] Received payload from Logstash: %s", string(requestBody))
-
-	// `requestBody`는 이미 []byte 타입이므로, 바로 사용합니다.
-	logData := string(requestBody)
-
-	// 원본 로그에서 세션 ID를 추출합니다.
-	sessionID := gjson.Get(logData, "sid").String()
-	if sessionID == "" {
-		log.Printf("[AnalyzeSession] ERROR: 'sid' field missing in raw log data")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "'sid' field missing"})
-		return
-	}
-
-	log.Printf("Logstash로부터 세션 처리 요청 수신: %s", sessionID)
-
-	// 비동기로 실제 분석 로직을 실행합니다.
-	go h.processSessionLogic(context.Background(), sessionID, logData)
-
-	c.JSON(http.StatusAccepted, gin.H{"status": "request accepted, processing in background"})
-}
-
 // StreamRecordedSession은 특정 세션의 녹화 내용을 클라이언트로 실시간 스트리밍합니다.
 func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 
@@ -679,7 +557,7 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
-	impersonatedClient, _, err := h.TeleportService.GetImpersonatedClient(ctx, impersonatedUser)
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		log.Printf("ERROR: 가장 클라이언트 생성 실패: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "내부 서버 오류: 클라이언트 생성 실패"})

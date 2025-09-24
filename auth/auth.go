@@ -3,20 +3,20 @@ package auth
 import (
 	"database/sql"
 	"net/http"
+	"os/exec"
 	"teleport-backend/config"
-	"teleport-backend/teleport"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
+	_ "modernc.org/sqlite"
 )
 
 // Handler는 GitHub 인증 관련 핸들러를 관리합니다.
 type Handler struct {
-	Cfg             *config.Config
-	TeleportService *teleport.Service
-	DB              *sql.DB
+	Cfg *config.Config
+	DB  *sql.DB
 }
 
 type LoginRequest struct {
@@ -30,12 +30,11 @@ type Claims struct {
 }
 
 // NewHandler는 인증 핸들러 구조체를 생성하고 초기화합니다.
-func NewHandler(cfg *config.Config, ts *teleport.Service, db *sql.DB) *Handler {
-	return &Handler{Cfg: cfg, TeleportService: ts, DB: db}
+func NewHandler(cfg *config.Config, db *sql.DB) *Handler {
+	return &Handler{Cfg: cfg, DB: db}
 }
 
 // HandleLogin은 로그인 요청을 처리합니다.
-// TODO 비밀번호 해싱
 func (h *Handler) HandleLogin(c *gin.Context) {
 	var jwtSecret = h.Cfg.JWTSecretKey
 	var req LoginRequest
@@ -46,7 +45,7 @@ func (h *Handler) HandleLogin(c *gin.Context) {
 
 	// DB에서 사용자 비밀번호 해시 조회
 	var storedHash string
-	err := h.DB.QueryRow("SELECT password_hash FROM users WHERE username = ?", req.Username).Scan(&storedHash)
+	err := h.DB.QueryRow("SELECT password FROM users WHERE username = ?", req.Username).Scan(&storedHash)
 	if err == sql.ErrNoRows {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "사용자를 찾을 수 없습니다."})
 		return
@@ -92,10 +91,23 @@ func (h *Handler) HandleReg(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "username와 password가 필요합니다"})
 		return
 	}
-	// DB에 사용자 추가
-	_, err := h.DB.Exec("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", req.Username, req.Password, "access")
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "비밀번호 해싱 실패: " + err.Error()})
+		return
+	}
+
+	// 해시된 비밀번호 저장
+	_, err = h.DB.Exec("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", req.Username, string(hashedPassword), "access")
 	if err != nil {
 		c.JSON(500, gin.H{"error": "사용자 등록 중 오류가 발생했습니다: " + err.Error()})
+		return
+	}
+
+	cmd := exec.Command("tctl", "users", "add", req.Username, "--roles=access")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		c.JSON(500, gin.H{"error": "tctl users add 실패: " + err.Error() + ", 출력: " + string(output)})
 		return
 	}
 
