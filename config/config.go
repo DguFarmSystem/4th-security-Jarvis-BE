@@ -42,7 +42,6 @@ func InitDB(dbPath string) (*sql.DB, error) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
-      role TEXT NOT NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );`
 	if _, err := db.Exec(createTableQuery); err != nil {

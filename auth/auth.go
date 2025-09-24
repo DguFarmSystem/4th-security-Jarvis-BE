@@ -82,8 +82,8 @@ func (h *Handler) HandleLogin(c *gin.Context) {
 	})
 }
 
-// 관리자 api로 사용자를 DB에 등록합니다.
-// TODO 접근제한, 비밀번호 해싱, 수정,삭제 핸들러 추가
+// 관리자 api로 사용자를 DB에 등록합니다. 유저 초기 권한은 무조건 access
+// TODO 접근제한, 수정,삭제 핸들러 추가
 func (h *Handler) HandleReg(c *gin.Context) {
 	// 클라이언트에서 JSON으로 전달된 id, password 구조체 정의
 	var req LoginRequest
@@ -98,7 +98,7 @@ func (h *Handler) HandleReg(c *gin.Context) {
 	}
 
 	// 해시된 비밀번호 저장
-	_, err = h.DB.Exec("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", req.Username, string(hashedPassword), "access")
+	_, err = h.DB.Exec("INSERT INTO users (username, password) VALUES (?, ?)", req.Username, string(hashedPassword))
 	if err != nil {
 		c.JSON(500, gin.H{"error": "사용자 등록 중 오류가 발생했습니다: " + err.Error()})
 		return

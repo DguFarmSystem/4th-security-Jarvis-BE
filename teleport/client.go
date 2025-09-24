@@ -20,9 +20,6 @@ type Service struct {
 	ClusterName string
 }
 
-// NewService는 새로운 Teleport 서비스를 생성합니다.
-// tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
-// TODO TBOT으로 대체 가능한지. 현재는 AdminIdentityFile 경로의 인증서를 스크립트 상에서 tctl로 갱신해줘야함
 func NewService(cfg *config.Config, username string) (*client.Client, error) {
 	//tctl로 identityFile 받기 중요한건 (사용자 이름)identity 이름
 	cmd := exec.Command("tctl", "auth", "sign", "--user="+username, "--out="+AdminIdentityFile+username, "--auth-server=localhost:3025", "--overwrite", "--ttl=10s")

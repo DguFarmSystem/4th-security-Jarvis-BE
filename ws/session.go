@@ -75,7 +75,7 @@ func HandleWebSocket(c *gin.Context) {
 	sshConfig := &ssh.ClientConfig{
 		User:            loginUser,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: CA 검증으로 교체 가능
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         10 * time.Second,
 	}
 
