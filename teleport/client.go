@@ -15,20 +15,18 @@ import (
 
 	"github.com/gravitational/teleport/api/client"
 	"github.com/gravitational/teleport/api/client/proto"
-	"github.com/gravitational/teleport/api/identityfile"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/trace"
 	"golang.org/x/crypto/ssh"
 	"google.golang.org/grpc"
 )
 
-const machineIDIdentityFile = "/opt/jarvis-service-identity"
+const AdminIdentityFile = "./identity"
 
 // Service는 Teleport 클라이언트와 관련된 모든 작업을 처리합니다.
 type Service struct {
 	Client      *client.Client
 	Cfg         *config.Config
-	caCertPool  *x509.CertPool
 	ClusterName string
 }
 
@@ -41,23 +39,9 @@ type CertificateConfig struct {
 
 // NewService는 새로운 Teleport 서비스를 생성합니다.
 // tbot이 생성한 ID 파일을 사용하여 Teleport에 연결합니다.
+// TODO TBOT으로 대체 가능한지. 현재는 AdminIdentityFile 경로의 인증서를 스크립트 상에서 tctl로 갱신해줘야함
 func NewService(cfg *config.Config) (*Service, error) {
-	//ID 파일에서 CA 인증서를 읽어와 메모리에 저장합니다.
-	id, err := identityfile.ReadFile(machineIDIdentityFile)
-	if err != nil {
-		return nil, fmt.Errorf("tbot ID 파일 읽기 실패: %w", err)
-	}
-
-	caCertPool := x509.NewCertPool()
-	for i, caBytes := range id.CACerts.TLS {
-		if ok := caCertPool.AppendCertsFromPEM(caBytes); !ok {
-			log.Printf("[DEBUG] 로드 중인 CA 인증서 #%d 내용:\n%s", i+1, string(caBytes))
-			return nil, fmt.Errorf("ID 파일에서 CA 인증서 추가 실패")
-		}
-	}
-	log.Println("[INFO] tbot ID 파일에서 CA 인증서를 성공적으로 로드했습니다.")
-
-	creds := client.LoadIdentityFile(machineIDIdentityFile)
+	creds := client.LoadIdentityFile(AdminIdentityFile)
 	mainClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},
@@ -74,8 +58,9 @@ func NewService(cfg *config.Config) (*Service, error) {
 		return nil, fmt.Errorf("Teleport 클러스터(%s) 연결 실패: %w", cfg.TeleportAuthAddr, err)
 	}
 	log.Printf("Teleport 클러스터(%s)에 성공적으로 연결되었습니다.", ping.ClusterName)
-	return &Service{Client: mainClient, Cfg: cfg, caCertPool: caCertPool, ClusterName: ping.ClusterName}, nil
+	return &Service{Client: mainClient, Cfg: cfg, ClusterName: ping.ClusterName}, nil
 }
+
 func (s *Service) Close() {
 	if s.Client != nil {
 		s.Client.Close()
@@ -130,7 +115,6 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 		privateKey: priv,
 		tlsCert:    certs.TLS,
 		sshCert:    certs.SSH,
-		caCertPool: s.caCertPool,
 	}
 	log.Println("[DEBUG] 메모리 내 자격증명(creds) 생성 성공")
 
@@ -142,11 +126,6 @@ func (s *Service) GetImpersonatedClient(ctx context.Context, username string) (*
 	}
 	log.Printf("[DEBUG] creds.tlsCert 길이: %d", len(creds.tlsCert))
 	log.Printf("[DEBUG] creds.sshCert 길이: %d", len(creds.sshCert))
-	if creds.caCertPool == nil {
-		log.Println("[DEBUG] creds.caCertPool: nil")
-	} else {
-		log.Printf("[DEBUG] creds.caCertPool: OK (%d개의 CA 인증서 포함)", len(creds.caCertPool.Subjects()))
-	}
 	log.Println("-------------------------------------------------")
 
 	log.Println("[DEBUG] Impersonated 클라이언트 생성 시작...")
@@ -166,7 +145,6 @@ type inMemoryCreds struct {
 	privateKey ed25519.PrivateKey
 	tlsCert    []byte
 	sshCert    []byte
-	caCertPool *x509.CertPool
 }
 
 func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
@@ -192,7 +170,6 @@ func (c *inMemoryCreds) TLSConfig() (*tls.Config, error) {
 	log.Println("[DEBUG] inMemoryCreds: TLSConfig() 성공")
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		RootCAs:      c.caCertPool,
 	}, nil
 }
 
@@ -255,7 +232,7 @@ func isCertExpiredError(err error) bool {
 }
 
 func (s *Service) refreshClient() error {
-	creds := client.LoadIdentityFile(s.Cfg.TbotIdentityFile)
+	creds := client.LoadIdentityFile(AdminIdentityFile)
 	newClient, err := client.New(context.Background(), client.Config{
 		Addrs:       []string{s.Cfg.TeleportAuthAddr},
 		Credentials: []client.Credentials{creds},

@@ -30,10 +30,9 @@ type Handlers struct {
 }
 
 // NewHandlers는 API 핸들러 구조체를 생성하고 초기화합니다.
-func NewHandlers(ts *teleport.Service, gs services.Analyzer) *Handlers {
+func NewHandlers(ts *teleport.Service) *Handlers {
 	return &Handlers{
 		TeleportService: ts,
-		GeminiService:   gs,
 		HttpClient:      &http.Client{Timeout: 60 * time.Second},
 	}
 }
