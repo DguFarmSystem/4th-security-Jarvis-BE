@@ -598,6 +598,7 @@ func (h *Handlers) CheckAdmin(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		c.Abort()
 		return
 	}
 
@@ -607,6 +608,7 @@ func (h *Handlers) CheckAdmin(c *gin.Context) {
 	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.Abort()
 		return
 	}
 	defer impersonatedClient.Close()
@@ -614,6 +616,7 @@ func (h *Handlers) CheckAdmin(c *gin.Context) {
 	roles, err := impersonatedClient.GetRoles(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 목록을 가져오는 데 실패했습니다: " + err.Error()})
+		c.Abort()
 		return
 	}
 
@@ -627,4 +630,5 @@ func (h *Handlers) CheckAdmin(c *gin.Context) {
 
 	// 권한이 없으면 접근 차단
 	c.JSON(http.StatusForbidden, gin.H{"error": "관리자 권한(terraform-provider)이 필요합니다"})
+	c.Abort()
 }
