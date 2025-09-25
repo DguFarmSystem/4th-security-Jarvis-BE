@@ -58,48 +58,6 @@ func (h *Handlers) GetUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, users)
 }
 
-// DeleteUser는 특정 Teleport 사용자를 삭제합니다.
-func (h *Handlers) DeleteUser(c *gin.Context) {
-	impersonatedUser := c.GetString("username")
-	if impersonatedUser == "" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
-		return
-	}
-
-	userToDelete := c.Param("username")
-	if userToDelete == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "삭제할 사용자의 이름(username)이 반드시 필요합니다."})
-		return
-	}
-
-	//자기 자신을 삭제하려는 요청을 방지합니다.
-	if userToDelete == impersonatedUser {
-		c.JSON(http.StatusForbidden, gin.H{"error": "자기 자신을 삭제할 수 없습니다."})
-		return
-	}
-	log.Printf("[DeleteUser] 요청 시작: 요청자='%s', 삭제 대상='%s'", impersonatedUser, userToDelete)
-
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-	defer cancel()
-
-	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
-	if err != nil {
-		log.Printf("[DeleteUser] 클라이언트 생성 실패: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer impersonatedClient.Close()
-
-	err = impersonatedClient.DeleteUser(ctx, userToDelete)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("'%s' 사용자 삭제에 실패했습니다: %s", userToDelete, err.Error())})
-		return
-	}
-	log.Printf("[DeleteUser] 성공: 사용자 '%s'가 성공적으로 삭제되었습니다.", userToDelete)
-	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("사용자 '%s'이(가) 성공적으로 삭제되었습니다.", userToDelete)})
-
-}
-
 // UpdateUser는 특정 사용자의 역할(Role) 정보를 업데이트합니다.
 func (h *Handlers) UpdateUser(c *gin.Context) {
 	userToUpdate := c.Param("username")
@@ -399,12 +357,12 @@ func (h *Handlers) GenerateNodeJoinToken(c *gin.Context) {
 	log.Printf("[GenerateToken] 토큰 등록 성공.")
 
 	// 스크립트 URL에 토큰과 역할을 쿼리 파라미터로 전달합니다.
-	scriptURL := fmt.Sprintf("https://%s/scripts/install.sh", config.LoadConfig().TeleportProxyAddr)
+	scriptURL := fmt.Sprintf("https://%s/scripts/install.sh", h.Cfg.TeleportProxyAddr)
 
 	// 최종적으로 사용자가 실행할 명령어
 	oneLineInstallCommand := fmt.Sprintf(`curl %s | sudo bash`, scriptURL)
 
-	manualStartCommand := fmt.Sprintf("sudo teleport start --roles=node --token=%s --auth-server=%s --nodename=%s", tokenValue, config.LoadConfig().TeleportProxyAddr, req.Nodename)
+	manualStartCommand := fmt.Sprintf("sudo teleport start --roles=node --token=%s --auth-server=%s --nodename=%s", tokenValue, h.Cfg.TeleportProxyAddr, req.Nodename)
 	//사용자에게 제공할 안내 정보 구성
 
 	response := gin.H{
@@ -634,4 +592,39 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 			c.Writer.Flush()
 		}
 	}
+}
+
+func (h *Handlers) CheckAdmin(c *gin.Context) {
+	impersonatedUser := c.GetString("username")
+	if impersonatedUser == "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+
+	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer impersonatedClient.Close()
+
+	roles, err := impersonatedClient.GetRoles(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 목록을 가져오는 데 실패했습니다: " + err.Error()})
+		return
+	}
+
+	// "terraform-provider" 역할이 있는지 확인
+	for _, role := range roles {
+		if role.GetName() == "terraform-provider" {
+			c.Next()
+			return
+		}
+	}
+
+	// 권한이 없으면 접근 차단
+	c.JSON(http.StatusForbidden, gin.H{"error": "관리자 권한(terraform-provider)이 필요합니다"})
 }

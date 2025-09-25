@@ -27,21 +27,21 @@ func main() {
 	// 핸들러 및 미들웨어 초기화 (의존성 주입)/////////////
 	apiHandlers := api.NewHandlers(cfg)
 	authMiddleware := api.NewAuthMiddleware(cfg)
-	authHandler := auth.NewHandler(cfg, db)
+	authHandler, _ := auth.NewHandler(cfg, db)
 
 	// Gin 라우터 설정
 	router := gin.Default()
 
 	// 라우트 등록
 	router.POST("/login", authHandler.HandleLogin)
-	router.POST("/register", authHandler.HandleReg)
 
 	// API v1 라우트 (JWT 인증 필요)
 	apiV1 := router.Group("/api/v1")
 	apiV1.Use(authMiddleware)
 	{
+		apiV1.POST("/register", apiHandlers.CheckAdmin, authHandler.HandleReg)
+		apiV1.DELETE("/delete", apiHandlers.CheckAdmin, authHandler.HandleDel)
 		apiV1.GET("/users", apiHandlers.GetUsers)
-		apiV1.DELETE("/users/:username", apiHandlers.DeleteUser)
 		apiV1.PUT("/users/:username", apiHandlers.UpdateUser)
 
 		apiV1.GET("/roles", apiHandlers.GetRoles)

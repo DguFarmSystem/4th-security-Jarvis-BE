@@ -2,6 +2,7 @@ package auth
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"os/exec"
 	"teleport-backend/config"
@@ -24,14 +25,35 @@ type LoginRequest struct {
 	Password string `json:"password" binding:"required"`
 }
 
+type DeleteRequest struct {
+	Username string `json:"username" binding:"required"`
+}
+
 type Claims struct {
 	Username string `json:"username"`
 	jwt.RegisteredClaims
 }
 
-// NewHandler는 인증 핸들러 구조체를 생성하고 초기화합니다.
-func NewHandler(cfg *config.Config, db *sql.DB) *Handler {
-	return &Handler{Cfg: cfg, DB: db}
+// NewHandler는 인증 핸들러 구조체를 생성하고 초기화합니다. + 관리자 계정 생성
+func NewHandler(cfg *config.Config, db *sql.DB) (*Handler, error) {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("bcrypt 해시 실패: %w", err)
+	}
+
+	// 해시된 비밀번호 저장
+	_, err = db.Exec("INSERT INTO users (username, password) VALUES (?, ?)", "admin", string(hashedPassword))
+	if err != nil {
+		return nil, fmt.Errorf("DB에 admin 사용자 저장 실패: %w", err)
+	}
+
+	cmd := exec.Command("tctl", "users", "add", "admin", "--roles=terraform-provider")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("tctl users add 실패: %w, 출력: %s", err, string(output))
+	}
+
+	return &Handler{Cfg: cfg, DB: db}, nil
 }
 
 // HandleLogin은 로그인 요청을 처리합니다.
@@ -82,8 +104,8 @@ func (h *Handler) HandleLogin(c *gin.Context) {
 	})
 }
 
-// 관리자 api로 사용자를 DB에 등록합니다. 유저 초기 권한은 무조건 access
-// TODO 접근제한, 수정,삭제 핸들러 추가
+// 관리자 api - 사용자를 DB에 등록합니다. 유저 초기 권한은 무조건 access
+// TODO db-teleport 트렌젝션, 인젝션 방지, 브루트포싱 방지
 func (h *Handler) HandleReg(c *gin.Context) {
 	// 클라이언트에서 JSON으로 전달된 id, password 구조체 정의
 	var req LoginRequest
@@ -91,6 +113,7 @@ func (h *Handler) HandleReg(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "username와 password가 필요합니다"})
 		return
 	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "비밀번호 해싱 실패: " + err.Error()})
@@ -112,4 +135,28 @@ func (h *Handler) HandleReg(c *gin.Context) {
 	}
 
 	c.JSON(201, gin.H{"message": "회원가입이 완료되었습니다."})
+}
+
+func (h *Handler) HandleDel(c *gin.Context) {
+	// 클라이언트에서 JSON으로 전달된 id, password 구조체 정의
+	var req DeleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"error": "username이 필요합니다"})
+		return
+	}
+
+	_, err := h.DB.Exec("DELETE FROM users WHERE username = ?", req.Username)
+	if err != nil {
+		c.JSON(500, gin.H{"error": "사용자 삭제 중 오류가 발생했습니다: " + err.Error()})
+		return
+	}
+
+	cmd := exec.Command("tctl", "users", "rm", req.Username)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		c.JSON(500, gin.H{"error": "tctl users add 실패: " + err.Error() + ", 출력: " + string(output)})
+		return
+	}
+
+	c.JSON(201, gin.H{"message": "삭제가 완료되었습니다."})
 }
