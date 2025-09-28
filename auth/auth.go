@@ -47,7 +47,7 @@ func NewHandler(cfg *config.Config, db *sql.DB) (*Handler, error) {
 		return nil, fmt.Errorf("DB에 admin 사용자 저장 실패: %w", err)
 	}
 
-	cmd := exec.Command("tctl", "users", "add", "admin", "--roles=terraform-provider")
+	cmd := exec.Command("tctl", "users", "add", "admin", "--roles=terraform-provider,access,editor")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("tctl users add 실패: %w, 출력: %s", err, string(output))
@@ -84,7 +84,7 @@ func (h *Handler) HandleLogin(c *gin.Context) {
 	}
 
 	// JWT 토큰 생성
-	expirationTime := time.Now().Add(24 * time.Hour)
+	expirationTime := time.Now().Add(1 * time.Hour)
 	claims := &Claims{
 		Username: req.Username,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -127,7 +127,7 @@ func (h *Handler) HandleReg(c *gin.Context) {
 		return
 	}
 
-	cmd := exec.Command("tctl", "users", "add", req.Username, "--roles=editor")
+	cmd := exec.Command("tctl", "users", "add", req.Username, "--roles=access,editor")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "tctl users add 실패: " + err.Error() + ", 출력: " + string(output)})
