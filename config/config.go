@@ -18,7 +18,7 @@ type Config struct {
 	CertFile          string
 	KeyFile           string
 	ListenAddr        string
-	LogstashURL       string // 데이터를 보낼 Logstash 주소
+	AnalyzerURL       string // 세션 로그를 분석기 서비스로 보낼 URL
 	AuditLogPath      string // 감시할 Teleport 감사 로그 경로
 	GCPProjectID      string // GCP 프로젝트 ID
 	GCPLocation       string // Vertex AI 리전 (e.g., "us-central1")
@@ -42,6 +42,7 @@ func LoadConfig() *Config {
 		CertFile:          "/etc/letsencrypt/fullchain.pem", // HTTPS 서버를 위한 SSL 인증서 파일의 경로입니다.
 		KeyFile:           "/etc/letsencrypt/privkey.pem",   // HTTPS 서버를 위한 SSL 개인 키 파일의 경로입니다.
 		ListenAddr:        ":8080",                          // 애플리케이션이 리스닝할 주소와 포트입니다.
+		AnalyzerURL:       os.Getenv("ANALYZER_URL"),        // 세션 로그를 분석기 서비스로 보낼 URL
 		GitHubOAuthConfig: &oauth2.Config{ // GitHub OAuth 애플리케이션 설정입니다.
 			ClientID:     os.Getenv("GITHUB_CLIENT_ID"),     // GitHub OAuth App의 클라이언트 ID입니다.
 			ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"), // GitHub OAuth App의 클라이언트 시크릿입니다.
@@ -49,7 +50,6 @@ func LoadConfig() *Config {
 			Endpoint:     github.Endpoint,
 			Scopes:       []string{"read:user", "read:org"},
 		},
-		LogstashURL:      "http://event-listen_logstash_1:5001", // Teleport 이벤트 플러그인이 이벤트를 전송할 Logstash의 주소입니다.
 		AuditLogPath:     os.Getenv("TELEPORT_AUDIT_LOG_PATH"),  //  Teleport 감사 로그 파일의 경로입니다.
 		GCPProjectID:     os.Getenv("GCP_PROJECT_ID"),           // Google Cloud Platform 프로젝트의 ID입니다.
 		GCPLocation:      os.Getenv("GCP_LOCATION"),             // Vertex AI (Gemini)를 사용할 GCP 리전입니다. (예: "us-central1")

@@ -551,14 +551,47 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
-// processSessionLogic은 세션 스크립트를 추출, 분석하고 Logstash로 전송하는 백그라운드 작업입니다.
+// sendToAnalyzer는 분석할 세션 데이터를 Analyzer 서비스로 전송합니다.
+func (h *Handlers) sendToAnalyzer(ctx context.Context, sessionData SessionDataForAnalysis) {
+	payload, err := json.Marshal(sessionData)
+	if err != nil {
+		log.Printf("세션 %s의 분석 요청 데이터 직렬화 실패: %v", sessionData.SessionID, err)
+		return
+	}
+
+	analyzerURL := h.TeleportService.Cfg.AnalyzerURL
+	if analyzerURL == "" {
+		log.Printf("세션 %s 처리 중단: ANALYZER_URL이 설정되지 않았습니다.", sessionData.SessionID)
+		return
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", analyzerURL, bytes.NewReader(payload))
+	if err != nil {
+		log.Printf("세션 %s의 Analyzer 요청 생성 실패: %v", sessionData.SessionID, err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.HttpClient.Do(req)
+	if err != nil {
+		log.Printf("세션 %s의 로그를 Analyzer로 전송 실패: %v", sessionData.SessionID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		log.Printf("세션 %s 전송 후 Analyzer로부터 에러 응답 수신: %s", sessionData.SessionID, resp.Status)
+	} else {
+		log.Printf("세션 %s의 로그를 Analyzer로 성공적으로 전송했습니다.", sessionData.SessionID)
+	}
+}
+
+// processSessionLogic은 세션 스크립트를 추출, 분석하고 Analyzer로 전송하는 백그라운드 작업입니다.
 func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, logData string) {
 	log.Printf("세션 처리 시작: %s", sessionID)
-	// Race Conditionq, 서버 저장 중 요청 방지
+	// Race Condition, 서버 저장 중 요청 방지
 	time.Sleep(15 * time.Second)
 
-	// 실행할 tsh play 명령어 전체를 미리 출력합니다.
-	// log.Printf("[DEBUG] Executing command: tsh play --proxy=%s -i %s --format=text %s", h.TeleportService.Cfg.TeleportProxyAddr, h.TeleportService.Cfg.TbotIdentityFile, sessionID)
 	cmd := exec.CommandContext(ctx, "tsh", "play",
 		"--proxy="+h.TeleportService.Cfg.TeleportProxyAddr,
 		"-i", h.TeleportService.Cfg.TbotIdentityFile,
@@ -576,20 +609,10 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 		return
 	}
 	transcript := out.String()
+	log.Printf("[DEBUG] Transcript for session %s extracted successfully.", sessionID)
 
-	log.Printf("[DEBUG] Transcript for session %s extracted successfully. \n Sending script: %s \n", sessionID, transcript)
-
-	// Gemini 서비스로 분석 요청
-	analysis, err := h.GeminiService.AnalyzeTranscript(ctx, transcript)
-	if err != nil {
-		log.Printf("세션 %s 분석 실패: %v", sessionID, err)
-		return
-	}
-
-	log.Printf("[DEBUG] Gemini analysis for session %s completed.", sessionID)
-
-	// 최종 데이터 조합 및 Logstash 전송
-	enrichedLog := EnrichedLog{
+	// 분석 서비스로 보낼 데이터 구성
+	sessionData := SessionDataForAnalysis{
 		SessionID:    sessionID,
 		User:         gjson.Get(logData, "user").String(),
 		ServerID:     gjson.Get(logData, "server_id").String(),
@@ -597,39 +620,15 @@ func (h *Handlers) processSessionLogic(ctx context.Context, sessionID string, lo
 		SessionStart: gjson.Get(logData, "session_start").String(),
 		SessionEnd:   gjson.Get(logData, "time").String(),
 		Transcript:   transcript,
-		Analysis:     analysis,
 	}
 
-	payload, err := json.Marshal(enrichedLog)
-	if err != nil {
-		log.Printf("세션 %s의 로그 데이터 직렬화 실패: %v", sessionID, err)
-		return
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", h.TeleportService.Cfg.LogstashURL, bytes.NewReader(payload))
-	if err != nil {
-		log.Printf("세션 %s의 Logstash 요청 생성 실패: %v", sessionID, err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := h.HttpClient.Do(req)
-	if err != nil {
-		log.Printf("세션 %s의 분석 로그를 Logstash로 전송 실패: %v", sessionID, err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		log.Printf("세션 %s 전송 후 Logstash로부터 에러 응답 수신: %s", sessionID, resp.Status)
-	} else {
-		log.Printf("세션 %s의 분석 로그를 Logstash로 성공적으로 전송했습니다.", sessionID)
-	}
+	// Analyzer 서비스로 데이터 전송
+	h.sendToAnalyzer(ctx, sessionData)
 }
 
-// AnalyzeSession은 Logstash로부터 session.end 이벤트를 받아 AI 분석을 트리거하는 함수입니다.
+// AnalyzeSession은 Teleport 이벤트 핸들러로부터 session.end 이벤트를 받아 AI 분석을 트리거하는 함수입니다.
 func (h *Handlers) AnalyzeSession(c *gin.Context) {
-	// Logstash가 보낸 JSON을 특정 타입이 아닌 일반 맵으로 수신
+	// JSON을 특정 타입이 아닌 일반 맵으로 수신
 	var payload map[string]interface{}
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		log.Printf("[AnalyzeSession] ERROR: Invalid JSON from Logstash: %v", err)
@@ -637,7 +636,7 @@ func (h *Handlers) AnalyzeSession(c *gin.Context) {
 		return
 	}
 
-	// Logstash로부터 받은 페이로드 전체를 로그로 남깁니다.
+	// 페이로드 전체를 로그로 남깁니다.
 	requestBody, _ := json.Marshal(payload)
 	log.Printf("[DEBUG-RECEIVE] Received payload from Logstash: %s", string(requestBody))
 
@@ -652,7 +651,7 @@ func (h *Handlers) AnalyzeSession(c *gin.Context) {
 		return
 	}
 
-	log.Printf("Logstash로부터 세션 처리 요청 수신: %s", sessionID)
+	log.Printf("세션 처리 요청 수신: %s", sessionID)
 
 	// 비동기로 실제 분석 로직을 실행합니다.
 	go h.processSessionLogic(context.Background(), sessionID, logData)
