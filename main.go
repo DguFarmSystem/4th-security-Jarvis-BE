@@ -25,10 +25,16 @@ func main() {
 	}
 	defer db.Close()
 
-	// 핸들러 및 미들웨어 초기화 (의존성 주입)/////////////
+	// 핸들러 및 미들웨어 초기화 (의존성 주입)
 	apiHandlers := api.NewHandlers(cfg)
 	authMiddleware := api.NewAuthMiddleware(cfg)
-	authHandler, _ := auth.NewHandler(cfg, db)
+	authHandler, err := auth.NewHandler(cfg, db)
+	if err != nil {
+		log.Fatalf("auth.NewHandler 실패: %v", err)
+	}
+	if authHandler == nil {
+		log.Fatalf("authHandler가 nil입니다. cfg: %+v, db: %+v", cfg, db)
+	}
 
 	// Gin 라우터 설정
 	router := gin.Default()
