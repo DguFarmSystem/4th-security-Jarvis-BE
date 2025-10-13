@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"teleport-backend/config"
 	"time"
@@ -47,12 +48,37 @@ func NewHandler(cfg *config.Config, db *sql.DB) (*Handler, error) {
 		return nil, fmt.Errorf("DB에 admin 사용자 저장 실패: %w", err)
 	}
 
-	cmd := exec.Command("tctl", "users", "add", "admin", "--roles=terraform-provider,access,editor")
+	customRole := `
+kind: role
+version: v6
+metadata:
+  name: custom
+spec:
+  allow:
+    logins: ["root,ubuntu"]
+    node_labels: {"*": "*"}
+  deny: {}
+`
+	roleFile := "/tmp/custom-role.yaml"
+	// 임시 파일로 역할 정의 저장
+	err = os.WriteFile(roleFile, []byte(customRole), 0644)
+	if err != nil {
+		return nil, fmt.Errorf("custom 역할 YAML 파일 저장 실패: %w", err)
+	}
+	// tctl로 role 추가 (존재시 업데이트)
+	cmd := exec.Command("tctl", "create", "-f", roleFile)
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("tctl role create 실패: %w, 출력: %s", err, string(output))
+	}
+
+	cmd = exec.Command("tctl", "users", "add", "admin", "--roles=custom,editor")
+	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("tctl users add 실패: %w, 출력: %s", err, string(output))
 	}
 
+	// 핸들러 인스턴스 반환
 	return &Handler{Cfg: cfg, DB: db}, nil
 }
 
@@ -127,7 +153,7 @@ func (h *Handler) HandleReg(c *gin.Context) {
 		return
 	}
 
-	cmd := exec.Command("tctl", "users", "add", req.Username, "--roles=access,editor")
+	cmd := exec.Command("tctl", "users", "add", req.Username, "--roles=custom,editor")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "tctl users add 실패: " + err.Error() + ", 출력: " + string(output)})
