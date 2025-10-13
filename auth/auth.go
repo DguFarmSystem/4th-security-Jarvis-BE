@@ -55,7 +55,7 @@ metadata:
   name: custom
 spec:
   allow:
-    logins: ["root,ubuntu"]
+    logins: ["root"]
     node_labels: {"*": "*"}
   deny: {}
 `
