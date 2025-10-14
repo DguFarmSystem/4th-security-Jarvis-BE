@@ -1,13 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"teleport-backend/config"
 	"teleport-backend/teleport"
 	"time"
@@ -495,12 +496,20 @@ func (h *Handlers) ListRecordedSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, events)
 }
 
-// StreamRecordedSession은 특정 세션의 녹화 내용을 클라이언트로 실시간 스트리밍합니다.
-func (h *Handlers) StreamRecordedSession(c *gin.Context) {
+var (
+	ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
+)
 
+func cleanTerminalOutput(input string) string {
+	s := ansiEscape.ReplaceAllString(input, "")
+	s = regexp.MustCompile(`[^\x20-\x7E\n\r]+`).ReplaceAllString(s, "")
+	return s
+}
+
+func (h *Handlers) GetSessionLogPlain(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
-		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없습니다."})
+		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
 		return
 	}
 
@@ -510,88 +519,47 @@ func (h *Handlers) StreamRecordedSession(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[StreamRecordedSession] 스트리밍 요청 시작: 요청자='%s', 대상 세션='%s'", impersonatedUser, sessionID)
-
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
-
+	// Teleport 클라이언트 생성
 	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
-		log.Printf("ERROR: 가장 클라이언트 생성 실패: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "내부 서버 오류: 클라이언트 생성 실패"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Teleport 클라이언트 생성 실패: " + err.Error()})
 		return
 	}
 	defer impersonatedClient.Close()
 
-	// StreamSessionEvents를 올바르게 호출하여 두 개의 채널을 받음
-	// startIndex 0은 녹화 시작부터 모든 이벤트를 가져옵니다.
+	ctx := c.Request.Context()
 	eventChan, errChan := impersonatedClient.StreamSessionEvents(ctx, sessionID, 0)
 
-	// SSE 스트리밍 설정, 클라이언트가 SSE 스트림을 받을 수 있도록 헤더를 설정합니다.
-	c.Writer.Header().Set("Content-Type", "text/event-stream")
-	c.Writer.Header().Set("Cache-Control", "no-cache")
-	c.Writer.Header().Set("Connection", "keep-alive")
+	var builder bytes.Buffer
 
-	// SSE 연결 유지를 위한 keep-alive Ticker 설정 (15초마다 전송)
-	keepAliveTicker := time.NewTicker(15 * time.Second)
-	defer keepAliveTicker.Stop()
-
-	var lastEventTime time.Time
-	isFirstEvent := true
-	log.Printf("[디버깅] 세션 '%s'에 대한 이벤트 스트리밍 루프 시작", sessionID)
+loop:
 	for {
 		select {
 		case event, ok := <-eventChan:
 			if !ok {
-				log.Printf("[StreamRecordedSession] 스트리밍 완료: 세션='%s'", sessionID)
-				return
+				break loop
 			}
 
-			if printEvent, isPrintEvent := event.(*events.SessionPrint); isPrintEvent {
-				var delay time.Duration
-				if isFirstEvent {
-					lastEventTime = printEvent.GetTime()
-					isFirstEvent = false
-				} else {
-					delay = printEvent.GetTime().Sub(lastEventTime)
-					lastEventTime = printEvent.GetTime()
-				}
-
-				payload, err := json.Marshal(gin.H{
-					"type":  "print",
-					"data":  string(printEvent.Data),
-					"delay": delay.Milliseconds(),
-					"time":  printEvent.Time.UTC(),
-				})
-				if err != nil {
-					log.Printf("ERROR: SSE 이벤트 데이터 마샬링 실패: %v", err)
-					continue
-				}
-
-				c.SSEvent("session_chunk", string(payload))
-				c.Writer.Flush()
+			switch e := event.(type) {
+			case *events.SessionPrint:
+				cleanText := cleanTerminalOutput(string(e.Data))
+				builder.WriteString(cleanText)
 			}
 
 		case err := <-errChan:
-			// 에러 채널에서 수신된 내용을 명확히 로깅합니다. nil이라도 기록되어야 합니다.
 			if err != nil {
-				log.Printf("ERROR: 스트리밍 중 오류 발생 (errChan 수신): %v", err)
-			} else {
-				log.Printf("[디버깅] errChan에서 nil을 수신하여 스트리밍을 종료합니다.")
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "세션 로그 이벤트 수신 중 오류: " + err.Error()})
+				return
 			}
-			return
+			break loop
 
 		case <-ctx.Done():
-			log.Printf("[StreamRecordedSession] 클라이언트 연결 끊김 (ctx.Done()): 세션='%s'", sessionID)
-			return
-
-		// 주기적으로 keep-alive 메시지를 보내 연결 상태를 확인하고 타임아웃을 방지합니다.
-		case <-keepAliveTicker.C:
-			log.Printf("[디버깅] Keep-alive 핑 전송")
-			c.SSEvent("keep-alive", "ping")
-			c.Writer.Flush()
+			break loop
 		}
 	}
+
+	c.Header("Content-Type", "text/plain; charset=utf-8")
+	c.String(http.StatusOK, builder.String())
 }
 
 func (h *Handlers) CheckAdmin(c *gin.Context) {

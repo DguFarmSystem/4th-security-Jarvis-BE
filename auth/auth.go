@@ -72,7 +72,7 @@ spec:
 		return nil, fmt.Errorf("tctl role create 실패: %w, 출력: %s", err, string(output))
 	}
 
-	cmd = exec.Command("tctl", "users", "add", "admin", "--roles=custom,editor")
+	cmd = exec.Command("tctl", "users", "add", "admin", "--roles=custom,editor,access,terraform-provider")
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("tctl users add 실패: %w, 출력: %s", err, string(output))
@@ -130,7 +130,6 @@ func (h *Handler) HandleLogin(c *gin.Context) {
 	})
 }
 
-// 관리자 api - 사용자를 DB에 등록합니다. 유저 초기 권한은 무조건 editor
 // TODO db-teleport 트렌젝션, 인젝션 방지, 브루트포싱 방지
 func (h *Handler) HandleReg(c *gin.Context) {
 	// 클라이언트에서 JSON으로 전달된 id, password 구조체 정의
@@ -153,7 +152,7 @@ func (h *Handler) HandleReg(c *gin.Context) {
 		return
 	}
 
-	cmd := exec.Command("tctl", "users", "add", req.Username, "--roles=custom,editor")
+	cmd := exec.Command("tctl", "users", "add", req.Username, "--roles=custom,editor,access")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		c.JSON(500, gin.H{"error": "tctl users add 실패: " + err.Error() + ", 출력: " + string(output)})

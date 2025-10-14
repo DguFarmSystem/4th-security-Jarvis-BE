@@ -71,7 +71,7 @@ func main() {
 
 		apiV1.GET("/audit/events", apiHandlers.GetAuditEvents)
 		apiV1.GET("/audit/session", apiHandlers.ListRecordedSessions)
-		apiV1.GET("/audit/session/:sessionID", apiHandlers.StreamRecordedSession)
+		apiV1.GET("/audit/session/:sessionID", apiHandlers.GetSessionLogPlain)
 	}
 
 	// 웹소켓 라우트
