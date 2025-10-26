@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -10,8 +8,6 @@ import (
 	"teleport-backend/api"
 	"teleport-backend/auth"
 	"teleport-backend/config"
-	"teleport-backend/services"
-	"teleport-backend/teleport"
 	"teleport-backend/ws"
 
 	"github.com/gin-contrib/cors"
@@ -21,58 +17,47 @@ import (
 func main() {
 	// 설정 로드
 	cfg := config.LoadConfig()
-	ctx := context.Background()
-	// Teleport 서비스 초기화
-	teleportService, err := teleport.NewService(cfg)
-	if err != nil {
-		log.Fatalf("Teleport 서비스 초기화 실패: %v", err)
-	}
-	defer teleportService.Close()
 
-	// Gemini 서비스 초기화
-	geminiService, err := services.NewGeminiService(ctx, cfg)
+	// SQLite 초기화 (루트에 teleport.db)
+	db, err := config.InitDB("./teleport.db")
 	if err != nil {
-		log.Println("Gemini 서비스 초기화 실패: %v", err)
+		log.Fatalf("DB 초기화 실패: %v", err)
 	}
+	defer db.Close()
 
 	// 핸들러 및 미들웨어 초기화 (의존성 주입)
-	apiHandlers := api.NewHandlers(teleportService, geminiService)
+	apiHandlers := api.NewHandlers(cfg)
 	authMiddleware := api.NewAuthMiddleware(cfg)
-	authHandler := auth.NewHandler(cfg, teleportService)
+	authHandler, err := auth.NewHandler(cfg, db)
+	if err != nil {
+		log.Fatalf("auth.NewHandler 실패: %v", err)
+	}
+	if authHandler == nil {
+		log.Fatalf("authHandler가 nil입니다. cfg: %+v, db: %+v", cfg, db)
+	}
 
 	// Gin 라우터 설정
 	router := gin.Default()
 
-	// CORS 미들웨어 설정
-
-	dynamicOrigin := fmt.Sprintf("https://%s:3000", cfg.ViteApiUrl)
-
-	corsConfig := cors.Config{
-		AllowOrigins: []string{
-			"https://jarvis-indol-omega.vercel.app",
-			"http://localhost:5173",
-			dynamicOrigin,
-			"https://4th-security-jarvis.duckdns.org",
-		},
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
-	}
-	router.Use(cors.New(corsConfig))
+	}))
 
 	// 라우트 등록
-	// GitHub SSO 라우트
-	router.GET("/login", authHandler.HandleGitHubLogin)
-	router.GET("/callback", authHandler.HandleGitHubCallback)
+	router.POST("/login", authHandler.HandleLogin)
 
 	// API v1 라우트 (JWT 인증 필요)
 	apiV1 := router.Group("/api/v1")
 	apiV1.Use(authMiddleware)
 	{
+		apiV1.POST("/register", apiHandlers.CheckAdmin, authHandler.HandleReg)
+		apiV1.DELETE("/delete", apiHandlers.CheckAdmin, authHandler.HandleDel)
 		apiV1.GET("/users", apiHandlers.GetUsers)
-		apiV1.DELETE("/users/:username", apiHandlers.DeleteUser)
 		apiV1.PUT("/users/:username", apiHandlers.UpdateUser)
 
 		apiV1.GET("/roles", apiHandlers.GetRoles)
@@ -86,11 +71,7 @@ func main() {
 
 		apiV1.GET("/audit/events", apiHandlers.GetAuditEvents)
 		apiV1.GET("/audit/session", apiHandlers.ListRecordedSessions)
-		apiV1.GET("/audit/session/:sessionID", apiHandlers.StreamRecordedSession)
-	}
-	internalAPI := router.Group("/internal")
-	{
-		internalAPI.POST("/analyze-session", apiHandlers.AnalyzeSession)
+		apiV1.GET("/audit/session/:sessionID", apiHandlers.GetSessionLogPlain)
 	}
 
 	// 웹소켓 라우트
@@ -107,8 +88,8 @@ func main() {
 		IdleTimeout:  0,               // Keep-Alive 연결에서 다음 요청을 기다리는 최대 시간
 	}
 
-	// 직접 생성한 서버 객체로 TLS 서버를 시작합니다.
-	if err := server.ListenAndServeTLS(cfg.CertFile, cfg.KeyFile); err != nil {
-		log.Fatalf("HTTPS 서버 실행 실패: %v", err)
+	// 직접 생성한 서버 객체로 HTTP 서버를 시작합니다.
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("HTTP 서버 실행 실패: %v", err)
 	}
 }
