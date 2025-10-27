@@ -509,26 +509,35 @@ func cleanTerminalOutput(input string) string {
 func (h *Handlers) GetSessionLogPlain(c *gin.Context) {
 	impersonatedUser := c.GetString("username")
 	if impersonatedUser == "" {
+		log.Printf("[ERROR] 사용자명 비어있음, 인증 실패") // 로그 추가
+		c.Error(fmt.Errorf("username missing"))
 		c.JSON(http.StatusForbidden, gin.H{"error": "인증된 사용자 정보를 찾을 수 없어 가장에 실패했습니다."})
 		return
 	}
+	log.Printf("[INFO] impersonatedUser: %s", impersonatedUser) // 로깅
 
 	sessionID := c.Param("sessionID")
 	if sessionID == "" {
+		log.Printf("[ERROR] sessionID 파라미터 없음") // 로그 추가
+		c.Error(fmt.Errorf("sessionID missing"))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "URL 파라미터로 sessionID가 필요합니다."})
 		return
 	}
+	log.Printf("[INFO] sessionID: %s", sessionID)
 
-	// Teleport 클라이언트 생성
 	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
 	if err != nil {
+		log.Printf("[ERROR] Teleport 클라이언트 생성 실패: %v", err) // 로그 추가
+		c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Teleport 클라이언트 생성 실패: " + err.Error()})
 		return
 	}
 	defer impersonatedClient.Close()
+	log.Printf("[INFO] Teleport 클라이언트 생성 성공")
 
 	ctx := c.Request.Context()
 	eventChan, errChan := impersonatedClient.StreamSessionEvents(ctx, sessionID, 0)
+	log.Printf("[INFO] StreamSessionEvents 채널 생성")
 
 	var builder bytes.Buffer
 
@@ -537,29 +546,34 @@ loop:
 		select {
 		case event, ok := <-eventChan:
 			if !ok {
+				log.Printf("[INFO] eventChan closed")
 				break loop
 			}
-
 			switch e := event.(type) {
 			case *events.SessionPrint:
 				cleanText := cleanTerminalOutput(string(e.Data))
 				builder.WriteString(cleanText)
+			default:
+				log.Printf("[DEBUG] Unhandled event type: %T", event)
 			}
-
 		case err := <-errChan:
 			if err != nil {
+				log.Printf("[ERROR] 세션 로그 이벤트 수신 중 오류: %v", err) // 로그 추가
+				c.Error(err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "세션 로그 이벤트 수신 중 오류: " + err.Error()})
 				return
 			}
+			log.Printf("[INFO] errChan closed with nil")
 			break loop
-
 		case <-ctx.Done():
+			log.Printf("[INFO] Context done")
 			break loop
 		}
 	}
 
 	c.Header("Content-Type", "text/plain; charset=utf-8")
 	c.String(http.StatusOK, builder.String())
+	log.Printf("[INFO] 로그 반환 완료, 길이: %d bytes", builder.Len())
 }
 
 func (h *Handlers) CheckAdmin(c *gin.Context) {

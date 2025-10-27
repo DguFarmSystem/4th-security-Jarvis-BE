@@ -55,8 +55,12 @@ metadata:
   name: custom
 spec:
   allow:
+    rules:
+      - resources: ['*']
+        verbs: ['*']
     logins: ["root"]
-    node_labels: {"*": "*"}
+    node_labels:
+      "*": "*"
   deny: {}
 `
 	roleFile := "/tmp/custom-role.yaml"
