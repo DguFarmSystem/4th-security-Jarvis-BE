@@ -570,30 +570,9 @@ func (h *Handlers) CheckAdmin(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
-	defer cancel()
-
-	impersonatedClient, err := teleport.NewService(h.Cfg, impersonatedUser)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		c.Abort()
+	if impersonatedUser == "admin" {
+		c.Next()
 		return
-	}
-	defer impersonatedClient.Close()
-
-	roles, err := impersonatedClient.GetRoles(ctx)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "역할 목록을 가져오는 데 실패했습니다: " + err.Error()})
-		c.Abort()
-		return
-	}
-
-	// "terraform-provider" 역할이 있는지 확인
-	for _, role := range roles {
-		if role.GetName() == "terraform-provider" {
-			c.Next()
-			return
-		}
 	}
 
 	// 권한이 없으면 접근 차단
